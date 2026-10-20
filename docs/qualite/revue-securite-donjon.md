@@ -16,12 +16,16 @@
 | D8 | L'échéance d'une manche est appréciée par l'horloge du serveur | Commande d'échéance envoyée avant l'échéance | Vérifié en local : la commande d'échéance envoyée avant la fin du compte à rebours renvoie la vue avec un numéro de manche inchangé ; rien n'est enregistré. Envoyée après l'échéance, elle enregistre la résolution : le héros sans choix s'est défendu. | Conforme |
 | D9 | Une action destinée à une manche déjà résolue est refusée | Test « refuse un choix pour une manche déjà résolue » | Le test réussit : l'action est refusée avec l'erreur `ROUND_OVER`, qui indique la manche en cours. | Conforme |
 | D10 | Connaître l'adresse d'une expédition ne permet pas d'y agir sans en être membre | Action envoyée par un joueur qui n'est pas membre | Vérifié en local : un joueur connecté non membre qui envoie une action reçoit 403 `NOT_A_MEMBER`. Il peut en revanche consulter la vue de l'expédition : ce choix est volontaire, puisqu'il permet de rejoindre une expédition à partir de son adresse ; la vue ne contient que des informations publiques (aucune action, aucune graine, aucune salle suivante), et l'identifiant, un UUID tiré au hasard, ne peut pas être deviné. Ce risque résiduel est accepté. | Conforme |
+| D11 | Aucun joueur ne peut agir au nom d'un compagnon ni écouter le canal en son nom | Test « présente le compagnon comme prêt, et ne le compte pas parmi les membres » ; fonction `isMember` de `rules.ts` | Le test réussit : un joueur dont l'identifiant serait celui d'un compagnon n'est pas membre. `isMember` (`rules.ts`) et le champ `isMember` de la vue (`view.ts`) écartent les compagnons ; la règle du canal s'appuie sur ce champ, et l'identifiant du joueur vient toujours de sa session (D5). Seul l'hôte ajoute un compagnon : vérifié en local, un autre membre reçoit 403 `NOT_HOST`. | Conforme |
+| D12 | L'intelligence artificielle ne transmet aux joueurs aucune information qu'ils n'auraient pas autrement | Lecture de `companion.ts` et `monster-strategies.ts` ; vue filtrée inchangée | `chooseCompanionAction` ne reçoit que les héros et les monstres debout au début de la manche, sans les actions des joueurs : le compagnon décide comme le ferait un joueur. Les stratégies des monstres, qui connaissent ces actions, s'exécutent sur le serveur pendant `resolveRound` ; leurs décisions ne sont transmises qu'une fois la manche résolue, dans l'événement `RoundResolved`. La vue filtrée n'expose les actions qu'à travers le compte rendu de la manche résolue. | Conforme |
 
 ## Synthèse
 
-- 10 exigences conformes, 0 non conforme, 0 risque accepté en tant que tel.
+- 12 exigences conformes, 0 non conforme, 0 risque accepté en tant que tel.
 - Risque résiduel accepté (D10) : un joueur qui connaît l'adresse d'une expédition peut en
   consulter la vue publique, sans pouvoir y agir ni écouter son canal.
 - Action : tout nouvel événement ou champ de l'état d'une expédition doit être ajouté
   explicitement à la vue s'il est public ; la vue construite champ par champ et le canal
-  discret garantissent qu'une information nouvelle reste cachée par défaut.
+  discret garantissent qu'une information nouvelle reste cachée par défaut. Toute nouvelle
+  décision de l'intelligence artificielle doit rester exécutée sur le serveur, et n'être
+  transmise qu'après la résolution de la manche.
