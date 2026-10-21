@@ -115,6 +115,8 @@ export function createApi({
 
   // 4. Toute erreur non prévue produit une réponse JSON uniforme,
   //    sans divulguer de détail technique au client.
+  // DETTE TECHNIQUE DT-009 (docs/qualite/dette-technique.md) : l'erreur est journalisée en
+  // entier ; celle de la base contient les paramètres de la requête, donc des données personnelles.
   app.onError((error, c) => {
     console.error(error)
     return c.json({ error: { code: 'INTERNAL', message: 'Erreur interne' } }, 500)
@@ -139,6 +141,8 @@ export function createApi({
         outbox: async () => ({ ...(await dispatcher.dispatch()), ...(await dispatcher.status()) }),
         // Durée de conservation des données de la Taverne.
         tavern: tavern.dailyTask,
+        // DETTE TECHNIQUE DT-008 (docs/qualite/dette-technique.md) : aucune tâche ne supprime
+        // les sessions expirées, conservées sans limite de durée avec leur adresse IP.
       },
       cronSecret,
     ),
