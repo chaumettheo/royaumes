@@ -18,14 +18,18 @@
 | D10 | Connaître l'adresse d'une expédition ne permet pas d'y agir sans en être membre | Action envoyée par un joueur qui n'est pas membre | Vérifié en local : un joueur connecté non membre qui envoie une action reçoit 403 `NOT_A_MEMBER`. Il peut en revanche consulter la vue de l'expédition : ce choix est volontaire, puisqu'il permet de rejoindre une expédition à partir de son adresse ; la vue ne contient que des informations publiques (aucune action, aucune graine, aucune salle suivante), et l'identifiant, un UUID tiré au hasard, ne peut pas être deviné. Ce risque résiduel est accepté. | Conforme |
 | D11 | Aucun joueur ne peut agir au nom d'un compagnon ni écouter le canal en son nom | Test « présente le compagnon comme prêt, et ne le compte pas parmi les membres » ; fonction `isMember` de `rules.ts` | Le test réussit : un joueur dont l'identifiant serait celui d'un compagnon n'est pas membre. `isMember` (`rules.ts`) et le champ `isMember` de la vue (`view.ts`) écartent les compagnons ; la règle du canal s'appuie sur ce champ, et l'identifiant du joueur vient toujours de sa session (D5). Seul l'hôte ajoute un compagnon : vérifié en local, un autre membre reçoit 403 `NOT_HOST`. | Conforme |
 | D12 | L'intelligence artificielle ne transmet aux joueurs aucune information qu'ils n'auraient pas autrement | Lecture de `companion.ts` et `monster-strategies.ts` ; vue filtrée inchangée | `chooseCompanionAction` ne reçoit que les héros et les monstres debout au début de la manche, sans les actions des joueurs : le compagnon décide comme le ferait un joueur. Les stratégies des monstres, qui connaissent ces actions, s'exécutent sur le serveur pendant `resolveRound` ; leurs décisions ne sont transmises qu'une fois la manche résolue, dans l'événement `RoundResolved`. La vue filtrée n'expose les actions qu'à travers le compte rendu de la manche résolue. | Conforme |
+| D13 | Le canal du classement ne transmet aucune donnée d'événement, en particulier la graine d'une expédition | Test « annonce sur son canal les événements du classement, sans leurs données » | Le test réussit : la route de repli du canal `ranking` renvoie l'événement `GameCreated` sans ses données, et la réponse ne contient pas `seed`. La règle du canal (`src/modules/ranking/index.ts`) est discrète (`redact: true`) : `present` remplace les données de chaque événement par un objet vide, pour le flux comme pour la route de repli. Vérifié aussi en local avec deux comptes : l'annonce reçue est `GameCreated` avec `data: {}`. | Conforme |
+| D14 | Les informations transmises par le canal du classement sont déjà accessibles à tout joueur connecté | Lecture de la fonction `present` de `stream-api.ts` ; réponse de l'API du classement | Le canal transmet la position, le nom du flux, la version et le type de chaque événement suivi. Le nom d'un flux `village-<joueur>` contient un identifiant de joueur, déjà présent (`playerId`) dans la réponse de `/api/ranking/players`. Le nom d'un flux `dungeon-<expédition>` contient un identifiant d'expédition, qui n'est public par ailleurs que pour les expéditions ouvertes (`/api/dungeon/games`) : le canal révèle donc aussi ceux des expéditions lancées ou terminées. Cet identifiant ne permet ni d'agir dans l'expédition (D10), ni d'écouter son canal (D3), seulement d'en lire la vue publique, déjà acceptée en D10. Le rythme des événements annoncés reste observable, sans révéler aucun choix. Risque accepté. | Risque accepté |
 
 ## Synthèse
 
-- 12 exigences conformes, 0 non conforme, 0 risque accepté en tant que tel.
-- Risque résiduel accepté (D10) : un joueur qui connaît l'adresse d'une expédition peut en
-  consulter la vue publique, sans pouvoir y agir ni écouter son canal.
+- 13 exigences conformes, 0 non conforme, 1 risque accepté (D14), sur 14 exigences.
+- Risques acceptés : un joueur qui connaît l'adresse d'une expédition peut en consulter la vue
+  publique (D10) ; le canal du classement révèle les identifiants des expéditions lancées ou
+  terminées, qui ne donnent accès qu'à cette vue publique (D14).
 - Action : tout nouvel événement ou champ de l'état d'une expédition doit être ajouté
-  explicitement à la vue s'il est public ; la vue construite champ par champ et le canal
-  discret garantissent qu'une information nouvelle reste cachée par défaut. Toute nouvelle
+  explicitement à la vue s'il est public ; la vue construite champ par champ et les canaux
+  discrets garantissent qu'une information nouvelle reste cachée par défaut. Toute nouvelle
   décision de l'intelligence artificielle doit rester exécutée sur le serveur, et n'être
-  transmise qu'après la résolution de la manche.
+  transmise qu'après la résolution de la manche. Tout nouveau canal global doit être discret
+  s'il suit des événements dont les données ne sont pas publiques.
