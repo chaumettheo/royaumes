@@ -1,0 +1,27 @@
+# Revue de sécurité du Marché : intégrité des échanges
+
+- Date : 2026-10-21
+- Périmètre : API du module Marché, gestionnaires de messages du Village et du Marché, boîte d'envoi et sa route de distribution, canal temps réel du Marché.
+- Références : OWASP Top 10 (A01 Broken Access Control, A04 Insecure Design, A08 Software and Data Integrity Failures).
+
+| N° | Exigence | Vérification | Constat | Statut |
+| --- | --- | --- | --- | --- |
+| M1 | Un joueur ne publie, n'accepte et ne retire une offre qu'en son propre nom | Lecture de `api.ts` : aucune route n'accepte d'identifiant de joueur |  Dans `src/modules/market/api.ts`, les trois routes d'écriture utilisent `c.var.userId` et `c.var.userName`, renseignés par `requireUser` à partir de la session ; la requête ne fournit que l'identifiant de l'offre (paramètre d'adresse) et, pour la publication, les quantités. | Conforme |
+| M2 | Seul le vendeur peut retirer son offre et récupérer les ressources en séquestre | Test « restitue les ressources au vendeur qui retire son offre » |  Le test réussit : le vendeur qui retire son offre récupère les ressources en séquestre, et un autre joueur reçoit une erreur 403. Vérifié aussi en local : un joueur qui tente de retirer l'offre d'un autre reçoit 403. | Conforme |
+| M3 | Un joueur ne peut pas accepter sa propre offre | Tests « refuse l'acceptation de sa propre offre... » et « restitue les ressources au vendeur... » |  Les tests réussissent. Vérifié en local : le vendeur qui accepte sa propre offre reçoit 409 `OWN_OFFER`. | Conforme |
+| M4 | Aucun échange ne crée ni ne détruit de ressources, y compris lors d'acceptations simultanées | Test « ne conclut l'échange qu'avec un seul acheteur, lors de deux acceptations simultanées » |  Le test réussit : lors de deux acceptations simultanées, un seul acheteur conclut l'échange, l'autre reçoit `NOT_OPEN`, et les trois villages totalisent toujours 300 bois et 150 pierre. Vérifié aussi en local : après un échange de 60 bois contre 30 pierre, le vendeur perd exactement 60 bois et gagne 30 pierre, l'acheteur l'inverse. | Conforme |
+| M5 | Un message remis plusieurs fois n'a d'effet qu'une fois | Test « n'a qu'un effet, et ne répond qu'une fois, lorsqu'un message est remis deux fois » ; test « ignore une réponse en double... » |  Les deux tests réussissent : un prélèvement remis deux fois au gestionnaire du Village ne prélève qu'une fois et n'enregistre qu'une réponse (clé `transferId`) ; une réponse en double, ou qui ne correspond pas à l'étape en cours, ne fait pas progresser l'offre. | Conforme |
+| M6 | Les quantités échangées sont des entiers strictement positifs, à l'entrée de l'API comme à la réception d'un message | Publication d'une offre de -50 bois ; schéma `ResourceAmounts` |  Vérifié en local : une offre de -50 bois est refusée (400 `INVALID_INPUT`) et le stock ne change pas ; une quantité décimale et une ressource inconnue sont refusées de même. Le schéma `ResourceAmounts` exige des entiers strictement positifs (`z.number().int().positive()`) ; il valide aussi le contenu des messages reçus par le Village (`TransferRequest`). | Conforme |
+| M7 | Aucun joueur ne peut provoquer un mouvement de ressources dans un village autrement que par une offre | Lecture des routes de l'API : aucune n'enregistre de message dans la boîte d'envoi |  Aucune route de l'API n'enregistre de message dans la boîte d'envoi : seule la fonction `toMessage` du service du Marché produit des messages adressés au Village, à partir des événements d'une offre (`messagesFor`). Les gestionnaires du Village ne sont accessibles que par la boîte d'envoi. | Conforme |
+| M8 | La route de distribution planifiée n'est accessible qu'avec le secret, absent du dépôt | Test « refuse une requête sans le secret attendu (401) » ; `git grep -n CRON_SECRET` |  Le test réussit : sans le secret attendu, la route répond 401 ; vérifié aussi en local, sans secret et avec un faux secret. `git grep -n CRON_SECRET` ne trouve que le nom de la variable (`.env.example` sans valeur, `server.ts`, `dispatch-api.ts`) et la valeur de test `secret-de-test` de `testing.ts`, sans rapport avec le secret de production. | Conforme |
+| M9 | Le canal du Marché ne transmet aucune donnée d'événement | Route de repli `/api/stream/market/events?after=0` |  Vérifié en local : la route de repli `/api/stream/market/events?after=0` renvoie les événements des offres (`OfferPublished`, `OfferOpened`, `OfferAccepted`, `PaymentRefused`...) avec un champ `data` vide pour chacun ; le canal est discret. | Conforme |
+| M10 | Les ressources manquantes lors d'un paiement refusé ne sont connues que de l'acheteur concerné | Consultation de l'offre par le vendeur après un paiement refusé |  Vérifié en local : après un paiement refusé, l'acheteur voit dans la vue de l'offre les ressources qui lui manquaient, tandis que le vendeur, par la route `/api/market/offers/<identifiant>`, obtient `missing: null`. | Conforme |
+
+## Synthèse
+
+- 10 exigences conformes, 0 non conforme, 0 risque accepté.
+- Action : un message abandonné après dix tentatives n'est que compté par la route de
+  distribution ; une offre concernée peut rester bloquée avec des ressources en séquestre.
+  Cette limite est consignée dans le registre de la dette technique (DT-007), avec un outil
+  d'examen et de relance des messages abandonnés à prévoir.
+- Action : tout nouveau gestionnaire de messages doit être idempotent, et ses doublons testés.
