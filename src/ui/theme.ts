@@ -29,6 +29,8 @@ export const theme: Record<string, Look> = {
   ranking: { glyph: '🏆', label: 'Classement' },
   market: { glyph: '⚖️', label: 'Marché' },
   tavern: { glyph: '🍺', label: 'Taverne' },
+  caravan: { glyph: '🐫', label: 'Caravane' },
+  brigands: { glyph: '🗡️', label: 'Brigands' },
 }
 
 /** Apparence d'une entité ; une apparence neutre si l'entité n'est pas décrite. */
