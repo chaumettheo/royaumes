@@ -1,7 +1,7 @@
 # Bilan technique de Royaumes
 
-- Date : 2026-10-21
-- Version examinée : étiquette `td11-fin`
+- Date : 2026-10-21, mis à jour le 2026-10-23
+- Version examinée : étiquette `td11-fin`, puis étiquette `eval-fin` (module Caravane)
 - Auteur : Théo Chaumet
 
 Ce bilan dresse l'état technique du projet au terme de son développement, à partir de ses
@@ -12,11 +12,11 @@ revues. Il s'adresse à la personne qui reprendrait le projet.
 
 | Élément | Valeur |
 | --- | --- |
-| Modules métier | 6 : `realm`, `dungeon`, `market`, `ranking`, `tavern`, `system` ; plus le service Village extrait (`src/services/village`, 82 lignes), non déployé |
+| Modules métier | 7 : `realm`, `dungeon`, `market`, `ranking`, `tavern`, `caravan`, `system` ; plus le service Village extrait (`src/services/village`, 82 lignes), non déployé |
 | Briques de la plateforme | 9 : `auth`, `cron`, `db`, `event-store`, `http`, `outbox`, `privacy`, `projection`, `realtime` |
-| Lignes de code, hors tests | 8 262 (`src/` et `app/`) |
-| Fichiers de test, nombre de tests | 33 fichiers, 232 tests |
-| Commits | 75 au moment de la rédaction |
+| Lignes de code, hors tests | 9 945 (`src/` et `app/`), contre 8 262 à `td11-fin` |
+| Fichiers de test, nombre de tests | 37 fichiers, 277 tests, contre 33 fichiers et 232 tests à `td11-fin` |
+| Commits | 79 au moment de la mise à jour |
 | Hébergement | Vercel (Francfort), base Neon (Francfort) |
 
 | Module | Stockage | Lignes, hors tests |
@@ -26,6 +26,7 @@ revues. Il s'adresse à la personne qui reprendrait le projet.
 | `market` | Event Sourcing, projection des offres, saga | 1 271 |
 | `ranking` | Projection du journal | 459 |
 | `tavern` | Tables ordinaires | 678 |
+| `caravan` | Event Sourcing (un flux par expéditeur), projection des caravanes et des destinataires, saga avec le Village | 1 659 |
 | `system` | Aucun | 73 |
 
 ## 2. Les décisions d'architecture
@@ -41,25 +42,27 @@ revues. Il s'adresse à la personne qui reprendrait le projet.
 | 0007 | Saga orchestrée et boîte d'envoi | Panne partielle du service Village (TD11) | A tenu : la saga reprend d'elle-même après le rétablissement du service, sans code supplémentaire. Prix : les messages abandonnés n'étaient que comptés (DT-007), jusqu'au script d'exploitation du TD11. |
 | 0008 | Taverne sans Event Sourcing, réécriture ciblée du journal | Export puis effacement d'un compte en production (TD10) ; relais du TD11 | A tenu : compte effacé, message disparu, « Joueur effacé » au classement ; le relais a imposé de réécrire aussi les copies relayées. Prix : export et effacement parcourent le journal, et leur coût croît avec lui. |
 | 0009 | Extraction du Village, préparée mais non déployée | Six tests de contrat ; démonstration à deux processus, panne et retour arrière compris (TD11) | Décision récente : éprouvée en local seulement. Trois dettes (DT-010 à DT-012) restent à rembourser avant tout déploiement du service. |
+| 0010 | Caravane fondée sur le journal d'événements, un flux par expéditeur | Envois simultanés à la limite de trois caravanes (test) ; arrivée constatée par le seul destinataire ; parcours local à deux joueurs | A tenu : la limite est garantie par la concurrence optimiste, et l'issue d'un trajet reste la même d'une lecture à l'autre. Prix : le flux de l'expéditeur est rejoué en entier à chaque commande (DT-015), et le générateur du Donjon a été recopié (DT-014). |
+| 0011 | Saga avec compensation entre la Caravane et le Village, lecture de son langage publié | Rappel et attaque (compensations), réponse du Village reçue deux fois, arrivée constatée par la tâche quotidienne (tests) | A tenu sans aucune modification du Village, comme l'annonçait l'ADR 0007. Prix : un versement ne peut pas être refusé par le Village, et une caravane destinée à un compte supprimé perd sa cargaison (DT-013). |
 
 ## 3. La qualité
 
 | Caractéristique | Indicateur | Valeur | Appréciation |
 | --- | --- | --- | --- |
-| Adéquation fonctionnelle | Tests réussis ; couverture des domaines | 232 tests réussis ; domaines couverts à 99,7 % des lignes | Satisfaisante : les règles du jeu sont entièrement vérifiées, sans base ni réseau. |
+| Adéquation fonctionnelle | Tests réussis ; couverture des domaines | 277 tests réussis (232 à `td11-fin`) ; domaines couverts à 99,8 % des lignes, dont 100 % pour celui de la Caravane | Satisfaisante : les règles du jeu sont entièrement vérifiées, sans base ni réseau. Chacune des onze règles de la fiche de cadrage de la Caravane est vérifiée par un test du domaine. |
 | Efficacité des performances | Débit et p99 des lectures ; respect du budget | De 509 (Marché) à 911 (Village) requêtes par seconde ; p99 de 37 à 64 ms ; budget respecté (p99 sous 500 ms, sans erreur) | Satisfaisante en local, avec une large marge. Mesures locales seulement : la production, sa latence réseau et ses démarrages à froid n'ont pas été mesurés. |
-| Fiabilité | Tests de concurrence, de reprise et d'idempotence ; messages abandonnés | Améliorations et héros simultanés, reprise de la saga après une panne, gestionnaires idempotents testés ; aucun message abandonné sur la base locale | Satisfaisante. Les messages abandonnés sont désormais signalés par la tâche quotidienne, et examinés par `scripts/dead-letters.ts`. |
-| Sécurité | Exigences des revues de sécurité | 40 exigences : 38 conformes, 2 risques acceptés (S9, D14) | Satisfaisante. La limitation des tentatives est partagée entre instances depuis le TD11 (DT-004). |
-| Maintenabilité | Règles d'architecture ; fonctions d'aptitude ; couverture | 8 règles de dependency-cruiser, aucune violation ; 2 fonctions d'aptitude testées ; 75 % des lignes couvertes | Bonne pour le serveur. L'interface (`ui.tsx`, `src/ui/`) n'est couverte par aucun test automatique (0 %) : vérifiée à la main à chaque TD, elle peut régresser sans qu'aucune vérification ne le signale. |
+| Fiabilité | Tests de concurrence, de reprise et d'idempotence ; messages abandonnés | Améliorations, héros et envois de caravanes simultanés, reprise de la saga après une panne, gestionnaires idempotents testés ; aucun message abandonné sur la base locale | Satisfaisante. Les messages abandonnés sont désormais signalés par la tâche quotidienne, et examinés par `scripts/dead-letters.ts`. |
+| Sécurité | Exigences des revues de sécurité | 52 exigences : 48 conformes, 1 non conforme (C12), 3 risques acceptés (S9, D14, C11) ; 40 exigences et 38 conformes à `td11-fin` | Satisfaisante. La limitation des tentatives est partagée entre instances depuis le TD11 (DT-004). La seule non-conformité, une cargaison perdue si le destinataire supprime son compte, est consignée (DT-013). |
+| Maintenabilité | Règles d'architecture ; fonctions d'aptitude ; couverture | 8 règles de dependency-cruiser, aucune violation, comme à `td11-fin` ; 2 fonctions d'aptitude, respectées par la Caravane sans modification ; 75,75 % des lignes couvertes, contre 75 % à `td11-fin` | Bonne pour le serveur. L'interface (`ui.tsx`, `src/ui/`) n'est couverte par aucun test automatique (0 %) : vérifiée à la main à chaque TD, elle peut régresser sans qu'aucune vérification ne le signale. |
 | Flexibilité | Extraction d'un module ; changement de base entre local et production | Village extrait et réversible sans migration ; mêmes migrations sur PGlite et Neon | Démontrée par l'extraction ; le service n'a pas de procédure de migration propre (DT-010). |
 
 ## 4. La dette technique
 
 | Indicateur | Valeur |
 | --- | --- |
-| Entrées consignées | 12 |
+| Entrées consignées | 15 |
 | Entrées remboursées, dont à l'échéance prévue | 7, toutes à l'échéance prévue |
-| Entrées ouvertes | 5 : DT-008 et DT-009 (revue de conformité du TD10), DT-010 à DT-012 (service extrait) |
+| Entrées ouvertes | 8 : DT-008 et DT-009 (revue de conformité du TD10), DT-010 à DT-012 (service extrait), DT-013 à DT-015 (Caravane) |
 
 Analyse : les sept premières entrées ont toutes été remboursées au TD prévu, de DT-002 et DT-003
 au TD3 jusqu'à DT-004 et DT-007 au TD11 : chacune avait été consignée au moment où le raccourci
@@ -70,6 +73,12 @@ avec leurs paramètres), issues de la revue de conformité du TD10, avaient pour
 n'ont pas été remboursées : ce sont les deux seules dettes en retard, et elles concernent la
 production. Elles doivent être traitées en priorité, et leur échéance réévaluée dans le registre.
 
+Les trois dettes de la Caravane ont été consignées au moment de leur création, avec leur marqueur
+dans le code, et une échéance liée à un événement observable : l'ouverture du jeu au public
+(DT-013), l'arrivée d'un troisième module qui tire au hasard (DT-014), un expéditeur dépassant
+mille caravanes (DT-015). Seule DT-013 touche les joueurs ; elle est aussi la seule
+non-conformité de la revue de sécurité du module.
+
 ## 5. Les revues
 
 | Revue | Exigences | Conformes | Non conformes ou en risque accepté | Actions ouvertes |
@@ -77,6 +86,7 @@ production. Elles doivent être traitées en priorité, et leur échéance réé
 | Sécurité de l'authentification | 16 | 15 | 1 risque accepté (S9 : l'inscription révèle qu'une adresse est déjà utilisée) | Aucune : DT-004 remboursée au TD11 |
 | Sécurité du Donjon | 14 | 13 | 1 risque accepté (D14 : le canal du classement révèle les identifiants des expéditions) | Aucune dette ; règles de conception à respecter pour tout nouvel événement ou canal |
 | Sécurité du Marché | 10 | 10 | 0 | Aucune : DT-007 remboursée au TD11 |
+| Sécurité des Caravanes | 12 | 10 | 1 non conforme (C12 : cargaison perdue si le destinataire supprime son compte), 1 risque accepté (C11 : le canal annonce l'activité des caravanes) | DT-013 |
 | Conformité au RGPD | 10 | 7 | 2 non conformes (R8, R9), 1 risque accepté (R10) | DT-008 et DT-009 ; droit de rectification du nom non mis en œuvre, consigné au registre des traitements mais absent du registre de la dette |
 
 ## 6. Risques et recommandations
@@ -85,7 +95,8 @@ production. Elles doivent être traitées en priorité, et leur échéance réé
 | --- | --- | --- | --- |
 | 1 | La charge des flux temps réel croît avec le nombre de joueurs connectés : chaque flux relit le journal deux fois par seconde (ADR 0003) | Hausse de la consommation de calcul de Neon et de la durée des fonctions Vercel, à nombre de commandes constant | Ajouter au test de charge un scénario de flux ouverts simultanés ; au-delà du budget, remplacer la lecture périodique par une notification de la base (`LISTEN`/`NOTIFY`) ou un service temps réel dédié. |
 | 2 | La croissance du journal allonge la reconstruction des projections et l'effacement d'un compte, qui le parcourent en entier (ADR 0006 et 0008) | Durée d'une reconstruction ou d'un effacement mesurée en secondes ; effacement qui approche la durée maximale d'une fonction | Mesurer ces deux durées à chaque revue ; filtrer la lecture du journal par flux et par type, puis exécuter l'effacement par lots, ou en tâche différée. |
-| 3 | L'interface n'est vérifiée par aucun test automatique | Régressions signalées par les joueurs après un déploiement, en particulier sur le temps réel (`use-channel.ts`) | Ajouter des tests de bout en bout dans un navigateur sur les parcours critiques (connexion, Village, flux temps réel, échange au Marché), exécutés avant chaque déploiement. |
+| 3 | L'interface n'est vérifiée par aucun test automatique ; l'écran des Caravanes s'y ajoute | Régressions signalées par les joueurs après un déploiement, en particulier sur le temps réel (`use-channel.ts`) et les comptes à rebours | Ajouter des tests de bout en bout dans un navigateur sur les parcours critiques (connexion, Village, flux temps réel, échange au Marché, envoi d'une caravane), exécutés avant chaque déploiement. |
+| 4 | Le langage publié du Village est lu par deux modules (Classement, Caravane) sans contrat vérifié | Liste des destinataires ou classement vides après une évolution du Village | Exporter le nom des événements publiés dans les contrats du Village, et ajouter un test de contrat qui vérifie leur forme. |
 
 ## 7. Conclusion
 
@@ -98,7 +109,13 @@ production ; couvrir l'interface par des tests de bout en bout avant toute évol
 des écrans ; mesurer la charge des flux temps réel avant toute hausse sensible du nombre de
 joueurs.
 
+Le module Caravane, ajouté pour l'évaluation, confirme cette conclusion : il s'est intégré sans
+modifier le code du Village, sans assouplir aucune règle de dépendance, et avec une couverture de
+son domaine complète. Il ajoute trois dettes consignées, dont une seule touche les joueurs (DT-013).
+
 ## Usage de l'IA générative
 
 Claude Code : rédaction des documents Markdown, dont ce bilan, à partir des éléments imposés
-par le support et des mesures relevées sur le projet. Le contenu a été relu et validé.
+par le support et des mesures relevées sur le projet ; pour le module Caravane, analyse et conseil
+sur le choix de l'architecture, et développement réalisé étape par étape, chaque étape étant
+validée pour en comprendre le fonctionnement. Le contenu a été relu et validé.
