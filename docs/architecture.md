@@ -12,7 +12,7 @@ dans le même commit que la modification qu'ils décrivent.
 ```mermaid
 flowchart TB
   joueur["Joueur<br/>[Personne]<br/>Joue depuis un navigateur,<br/>sur ordinateur ou sur téléphone"]
-  royaumes["Royaumes<br/>[Système logiciel]<br/>Jeu web multijoueur : village, donjon,<br/>classement, marché, taverne et caravanes"]
+  royaumes["Royaumes<br/>[Système logiciel]<br/>Jeu web multijoueur : village, donjon,<br/>classement, marché, taverne,<br/>caravanes et forge"]
   joueur -->|"Gère son village, joue avec les autres joueurs,<br/>reçoit les changements en direct (HTTPS)"| royaumes
 ```
 
@@ -42,8 +42,9 @@ flowchart TB
 | Application serveur | Next.js, Hono, Better Auth, Drizzle | Contrôle d'accès, règles du jeu, enregistrement des événements, diffusion des flux |
 | Base de données | PostgreSQL (Neon en production, PGlite en local et en test) | Conservation du journal d'événements, des comptes et des sessions ; modèles de lecture des modules |
 
-Le journal d'événements est la seule source de vérité des modules Village, Donjon, Marché et
-Caravane.
+Le journal d'événements est la seule source de vérité des modules Village, Donjon, Marché,
+Caravane et Forge. La Forge n'a aucune table : la vue d'un joueur est reconstruite à partir de
+son propre flux (ADR 0012).
 La Taverne n'enregistre pas d'événements : ses tables sont sa propre source de vérité (ADR 0008).
 Les tables des schémas `ranking`, `dungeon`, `market` et `caravan` sont des modèles de lecture, dérivés du journal par des projections : elles peuvent
 être vidées puis reconstruites à tout moment, sans perte d'information.
@@ -69,6 +70,7 @@ flowchart TB
     market["market<br/>Marché : orchestrateur de la saga,<br/>projection des offres, API, canal global"]
     tavern["tavern<br/>Taverne : messages et présence<br/>en tables, API, canal à source propre"]
     caravan["caravan<br/>Caravane : domaine et brigands,<br/>orchestrateur de la saga, projection<br/>des caravanes et des destinataires, API, canal global"]
+    forge["forge<br/>Forge : recettes, domaine,<br/>orchestrateur de la saga, API,<br/>canal personnel"]
   end
   subgraph platform["src/platform"]
     auth["auth<br/>Port AuthPort,<br/>adaptateur Better Auth"]
@@ -85,14 +87,15 @@ flowchart TB
   route --> server
   pages --> server
   server --> createapi
-  createapi --> system & realm & dungeon & ranking & market & tavern & caravan & auth & http & realtime & projection & outbox & privacy & cron
+  createapi --> system & realm & dungeon & ranking & market & tavern & caravan & forge & auth & http & realtime & projection & outbox & privacy & cron
   realm --> store & realtime & http & outbox
   market --> store & projection & realtime & http & outbox
   dungeon --> store & projection & realtime & http
   ranking --> projection & realtime & http
   tavern --> realtime & http & db
   caravan --> store & projection & realtime & http & outbox
-  realm & dungeon & market & ranking & tavern & caravan --> privacy
+  forge --> store & realtime & http & outbox
+  realm & dungeon & market & ranking & tavern & caravan & forge --> privacy
   privacy --> store
   auth --> privacy
   realtime --> store & http
@@ -128,6 +131,10 @@ un rappel (étapes de compensation). Il lit aussi le langage publié du Village,
 Classement : sa projection recense les fondations de village (`VillageFounded`), qui désignent
 les destinataires possibles. Enfin, il s'adresse à lui-même un message différé à l'échéance de
 chaque caravane, qui constate son arrivée même si personne ne la consulte.
+
+Le module `forge` adresse au Village les mêmes messages : un prélèvement à la demande d'une
+fabrication, avec réponse, puis un versement à l'annulation (compensation) ou à la fonte d'un
+objet. Il ne lit le langage publié d'aucun autre module (ADR 0012).
 
 Chaque module déclare ses données personnelles à la brique `privacy`, au moyen d'un fichier
 `personal-data.ts` : il les exporte, désigne les champs personnels de ses événements, et les

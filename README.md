@@ -82,13 +82,15 @@ Un module n'est accessible depuis l'extérieur que par ses entrées publiques : 
 | `market` | Marché : échanges de ressources entre joueurs, par une saga orchestrée | `/api/market` |
 | `tavern` | Taverne : salon de discussion commun et présence des joueurs, sans Event Sourcing | `/api/tavern` |
 | `caravan` | Caravanes : envoi de ressources au village d'un autre joueur, exposées aux brigands en chemin, par une saga avec le Village | `/api/caravan` |
+| `forge` | Forge : fabrication d'objets à partir de recettes, en consommant des ressources du village, et fonte des objets | `/api/forge` |
 
 ## Temps réel
 
 Les changements sont diffusés aux navigateurs par des Server-Sent Events, à l'adresse
 `/api/stream/<canal>`. Chaque canal n'est accessible qu'aux joueurs connectés autorisés par
 la règle du module concerné. Le canal `village-<joueur>` n'est ainsi accessible qu'au
-propriétaire du village, et le canal `dungeon-<expédition>` aux seuls membres de l'expédition.
+propriétaire du village, le canal `forge-<joueur>` au propriétaire de la forge, et le canal
+`dungeon-<expédition>` aux seuls membres de l'expédition.
 
 La plupart des canaux correspondent à un flux du journal d'événements. Les canaux `ranking`,
 `market` et `caravans` sont des canaux globaux : ils suivent, dans tout le journal, les événements qui
@@ -121,7 +123,9 @@ Les Caravanes suivent le même modèle (ADR 0011) : le prélèvement de la carga
 versement au destinataire, ou à l'expéditeur après une attaque de brigands ou un rappel, sont
 des messages adressés au Village. L'arrivée d'une caravane est constatée sans tâche de fond :
 à la première consultation qui suit son échéance, par l'expéditeur comme par le destinataire,
-ou par un message différé que la Caravane s'adresse à elle-même.
+ou par un message différé que la Caravane s'adresse à elle-même. La Forge prélève de même les
+ressources d'une recette, et les rend à l'annulation ou, pour moitié, à la fonte d'un objet
+(ADR 0012).
 
 ## Service Village extrait
 
@@ -151,6 +155,7 @@ page « Mes données » :
 La Caravane conserve le nom de l'expéditeur et celui du village du destinataire dans
 l'événement d'envoi et dans ses tables de lecture ; ils sont remplacés par une mention neutre
 à la suppression du compte, et le joueur effacé disparaît de la liste des destinataires.
+La Forge ne recopie aucun nom : son flux n'est rattaché au joueur que par son identifiant.
 
 Les messages de la Taverne sont conservés trente jours, et la présence d'un joueur deux
 minutes après son dernier signal. Ces durées sont appliquées à chaque lecture, et chaque jour
@@ -201,10 +206,11 @@ sans la première ; sans la seconde, la route des tâches quotidiennes reste fer
 - [Revue de sécurité du Donjon](docs/qualite/revue-securite-donjon.md)
 - [Revue de sécurité du Marché](docs/qualite/revue-securite-marche.md)
 - [Revue de sécurité des Caravanes](docs/qualite/revue-securite-caravan.md)
+- [Revue de sécurité de la Forge](docs/qualite/revue-securite-forge.md)
 - [Registre des traitements](docs/rgpd/registre-traitements.md)
 - [Revue de conformité au RGPD](docs/rgpd/revue-conformite.md)
 - [Bilan technique](docs/bilan-technique.md)
-- [Évaluation : fiche de cadrage](docs/evaluation/fiche-cadrage.md) et [document de rendu](docs/evaluation/rendu.md)
+- [Évaluation : fiche de cadrage de la Caravane](docs/evaluation/fiche-cadrage.md), [fiche de cadrage de la Forge](docs/evaluation/fiche-cadrage-forge.md) et [document de rendu](docs/evaluation/rendu.md)
 
 ## Conventions
 
@@ -240,6 +246,10 @@ versement est refusé par le Village, retenté, puis abandonné, et la cargaison
 à l'expéditeur. Chaque consultation des caravanes rejoue tout l'historique des envois de
 l'expéditeur : sa durée croît avec le nombre de caravanes envoyées. Les listes présentent
 les vingt caravanes les plus récentes.
+
+Les objets de la Forge n'ont encore aucun effet dans le jeu, et les coûts et durées des
+recettes n'ont pas fait l'objet d'une mesure d'équilibrage. L'historique de la forge d'un
+joueur est rejoué à chaque consultation.
 
 Le service Village extrait n'est pas prêt pour la production : ses migrations, la pagination
 de son flux publié et la distribution de sa boîte d'envoi restent à traiter. Ces limites, et
