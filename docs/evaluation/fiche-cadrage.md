@@ -78,5 +78,5 @@ destinataires sont présentées par un modèle de lecture, tenu par une projecti
 2. B2 : arrivée constatée sans tâche de fond.
 3. B3 : brigands pilotés par une règle déterministe et testée.
 4. B4 : modèle de lecture des caravanes et des destinataires, tenu par une projection.
-5. B1 : canal temps réel propre au module, réservé à l'expéditeur et au destinataire.
+5. B1 : canal temps réel propre au module, global et discret, sur le modèle de celui du Marché.
 6. B11 : droit de rectification du nom d'un joueur.
