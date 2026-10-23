@@ -17,3 +17,4 @@ un nouvel ADR est rédigé et l'ancien prend le statut « remplacé ».
 | [0009](0009-extraction-village.md) | Extraction du Village en service autonome, préparée mais non déployée | Accepté |
 | [0010](0010-caravane-journal-evenements.md) | Module Caravane fondé sur le journal d'événements, avec un flux par expéditeur | Accepté |
 | [0011](0011-caravane-saga-village.md) | Saga avec compensation entre la Caravane et le Village, et lecture de son langage publié | Accepté |
+| [0012](0012-forge-flux-par-joueur.md) | Forge fondée sur le flux du joueur, sans modèle de lecture, et saga simple avec le Village | Accepté |
