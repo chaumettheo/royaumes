@@ -31,6 +31,11 @@ export const theme: Record<string, Look> = {
   tavern: { glyph: '🍺', label: 'Taverne' },
   caravan: { glyph: '🐫', label: 'Caravane' },
   brigands: { glyph: '🗡️', label: 'Brigands' },
+  forge: { glyph: '🔥', label: 'Forge' },
+  axe: { glyph: '🪓', label: 'Hache' },
+  hammer: { glyph: '🔨', label: 'Marteau' },
+  ring: { glyph: '💍', label: 'Anneau' },
+  crown: { glyph: '👑', label: 'Couronne' },
 }
 
 /** Apparence d'une entité ; une apparence neutre si l'entité n'est pas décrite. */

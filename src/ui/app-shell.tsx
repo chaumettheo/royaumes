@@ -12,6 +12,7 @@ export const NAV = [
   { href: '/ranking', kind: 'ranking', label: 'Classement' },
   { href: '/market', kind: 'market', label: 'Marché' },
   { href: '/caravan', kind: 'caravan', label: 'Caravanes' },
+  { href: '/forge', kind: 'forge', label: 'Forge' },
   { href: '/tavern', kind: 'tavern', label: 'Taverne' },
 ]
 
