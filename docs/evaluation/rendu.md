@@ -45,6 +45,7 @@ et les bonus revendiqués ci-dessus portent sur la Caravane.
 | Communication avec le Village | `domain/saga.ts`, `application/forge-service.ts`, `messages.ts` (prélèvement, versement à l'annulation et à la fonte) | « met la recette au feu après le prélèvement [...] », « rend toutes les ressources à l’annulation [...] » |
 | Données personnelles | `personal-data.ts` (export ; aucun nom à réécrire) ; traitement T9 | « exporte l'inventaire et l'historique de la forge du joueur » |
 | Dette | DT-016 | — |
+| Production | Déploiement du 2026-10-23 | Parcours avec un compte de test : page `/forge` (200), route anonyme refusée (401), hache au feu, seconde fabrication refusée (409), annulation avec ressources rendues, objet ajouté à l'inventaire à l'échéance, fonte, anneau refusé faute d'or, recette inconnue refusée (400), canal du joueur refusé à un autre joueur (403), section `forge` présente dans l'export |
 
 ## Écarts avec la fiche de cadrage
 
