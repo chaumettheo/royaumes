@@ -1,7 +1,7 @@
 # Rendu de l'évaluation
 
 - Auteur : Théo Chaumet
-- Module : `caravan`
+- Module : `caravan` (module évalué), complété par le module `forge`
 - Adresse du déploiement : https://royaumes-rose.vercel.app
 - Fiche de cadrage : [fiche-cadrage.md](fiche-cadrage.md)
 
@@ -30,6 +30,22 @@
 | B4 | Modèle de lecture tenu par une projection, avec son point de reprise et sa version : caravanes et destinataires | `infrastructure/caravans-projection.ts` (version 1), `infrastructure/drizzle-caravans-reader.ts`, `infrastructure/schema.ts` | `src/modules/caravan/infrastructure/caravans-projection.test.ts` (dont la reconstruction) | ADR 0010 ; `docs/architecture.md` ; README (base de données) |
 | B1 | Canal temps réel propre au module, `caravans`, global et discret, avec sa règle d'accès | `index.ts` (`channelPolicy`), `ui.tsx` (`useChannel`) | « annonce l'évolution des caravanes sur un canal discret, sans leur contenu » | ADR 0010 ; README (temps réel) ; revue de sécurité (C11) |
 
+## Module complémentaire : la Forge
+
+La Forge, décrite par sa propre [fiche de cadrage](fiche-cadrage-forge.md), est un second module,
+réalisé selon les mêmes exigences. Elle n'est présentée ici que pour être vérifiée : les exigences
+et les bonus revendiqués ci-dessus portent sur la Caravane.
+
+| Élément | Fichiers | Tests |
+| --- | --- | --- |
+| Découpage, domaine pur | `src/modules/forge/` : `domain/` (`forge.ts`, `recipes.ts`, `saga.ts`, `view.ts`), `application/`, `infrastructure/`, `api.ts`, `messages.ts`, `personal-data.ts`, `index.ts`, `contracts.ts`, `ui.tsx` ; page `app/(jeu)/forge/page.tsx` | `pnpm lint:archi` |
+| Stockage | Journal d'événements, flux `forge-<joueur>`, sans table ; ADR 0012 | « valide la recette, et refuse une seconde fabrication simultanée » |
+| Règles 1 à 9 de la fiche | `domain/forge.ts`, `domain/recipes.ts` | `src/modules/forge/domain/forge.test.ts` (16 tests, un groupe par règle) |
+| Routes et sécurité | `api.ts`, `requireUser` sur `/forge` et `/forge/*` ; revue `docs/qualite/revue-securite-forge.md` (10 exigences conformes) | `src/bootstrap/forge-api.test.ts` (11 tests) |
+| Communication avec le Village | `domain/saga.ts`, `application/forge-service.ts`, `messages.ts` (prélèvement, versement à l'annulation et à la fonte) | « met la recette au feu après le prélèvement [...] », « rend toutes les ressources à l’annulation [...] » |
+| Données personnelles | `personal-data.ts` (export ; aucun nom à réécrire) ; traitement T9 | « exporte l'inventaire et l'historique de la forge du joueur » |
+| Dette | DT-016 | — |
+
 ## Écarts avec la fiche de cadrage
 
 - Bonus B1 : la fiche envisageait un canal réservé à l'expéditeur et au destinataire. Le canal
@@ -43,20 +59,21 @@
 
 | Indicateur | À l'étiquette `td11-fin` | Au rendu |
 | --- | --- | --- |
-| Nombre de tests | 232 | 277 |
-| Couverture des lignes | 75 % | 75,75 % |
+| Nombre de tests | 232 | 304 |
+| Couverture des lignes | 75 % | 75,97 % |
 | Violations des règles d'architecture | 0 | 0 |
 
 ## Usage de l'IA générative
 
 Claude Code :
 
-- documents : rédaction des documents Markdown (fiche de cadrage, ADR 0010 et 0011, revue de
+- documents : rédaction des documents Markdown (fiches de cadrage, ADR 0010 à 0012, revues de
   sécurité, mises à jour de l'architecture, du README, des registres et du bilan, ce document),
   à partir des éléments imposés par le support ;
-- analyse et conseil : choix du module, du stockage et du mode de communication avec le Village ;
+- analyse et conseil : choix des modules, de leur stockage et de leur mode de communication avec
+  le Village ;
 - code et tests : développement réalisé étape par étape, chaque étape étant validée pour en
   comprendre le fonctionnement.
 
-Les résultats ont été vérifiés par `pnpm verify`, par un parcours local à deux joueurs, et par un
-parcours sur le déploiement de production. Le contenu a été relu et validé.
+Les résultats ont été vérifiés par `pnpm verify`, par des parcours locaux, et par des parcours sur le
+déploiement de production. Le contenu a été relu et validé.
