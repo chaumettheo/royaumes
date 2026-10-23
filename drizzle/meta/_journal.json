@@ -92,6 +92,13 @@
       "when": 1792583533838,
       "tag": "0012_limitation_partagee",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792749304559,
+      "tag": "0013_caravane",
+      "breakpoints": true
     }
   ]
 }

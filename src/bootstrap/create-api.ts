@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { createCaravanModule } from '@/modules/caravan'
 import { createDungeonModule } from '@/modules/dungeon'
 import { createMarketModule } from '@/modules/market'
 import { createRankingModule } from '@/modules/ranking'
@@ -87,6 +88,15 @@ export function createApi({
 
   const tavern = createTavernModule({ db, clock })
 
+  // La Caravane, comme le Marché, déclenche la distribution après ses commandes et consultations.
+  const caravan = createCaravanModule({
+    store,
+    db,
+    projections,
+    dispatch: () => dispatcher.dispatch(),
+    clock,
+  })
+
   // Droits des joueurs : chaque module fournit ses données personnelles. L'identité vient
   // en dernier : tant qu'elle n'est pas effacée, le joueur peut relancer un effacement interrompu.
   const privacy = createPrivacyService(
@@ -97,6 +107,7 @@ export function createApi({
       market.personalData,
       ranking.personalData,
       tavern.personalData,
+      caravan.personalData,
       createIdentityPersonalData(db),
     ],
     clock,
@@ -105,6 +116,7 @@ export function createApi({
   // Gestionnaires de messages, déclarés par les modules et confiés au distributeur.
   dispatcher.register(realm.handlers)
   dispatcher.register(market.handlers)
+  dispatcher.register(caravan.handlers)
 
   // Règles d'accès aux canaux temps réel, déclarées par les modules.
   const policies: ChannelPolicy[] = [
@@ -113,6 +125,7 @@ export function createApi({
     ranking.channelPolicy,
     market.channelPolicy,
     tavern.channelPolicy,
+    caravan.channelPolicy,
   ]
 
   // 2. Application principale : toutes ses routes sont préfixées par /api.
@@ -179,6 +192,7 @@ export function createApi({
   app.use('/ranking/*', requireUser(auth))
   app.use('/market/*', requireUser(auth))
   app.use('/tavern/*', requireUser(auth))
+  app.use('/caravan/*', requireUser(auth))
   app.use('/account', requireUser(auth))
   app.use('/account/*', requireUser(auth))
   app.use('/stream/*', requireUser(auth))
@@ -192,6 +206,7 @@ export function createApi({
     .route('/ranking', ranking.api)
     .route('/market', market.api)
     .route('/tavern', tavern.api)
+    .route('/caravan', caravan.api)
     .route('/account', createPrivacyApi(privacy))
     .route('/stream', createRealtimeApi({ store, policies, ...realtime }))
 }
