@@ -1,13 +1,20 @@
-import { headers } from 'next/headers'
-import { currentUser } from '@/bootstrap/server'
 import { VillageScreen } from '@/modules/realm/ui'
+import { WorldMap } from '@/ui/world-map'
 
 /**
- * Page du Village. Elle transmet au composant l'identifiant du joueur connecté,
- * qui sert à nommer le canal temps réel de son village.
- * La mise en page du groupe (jeu) garantit qu'un joueur est connecté.
+ * Page du Village : la carte du royaume, sur laquelle le joueur arrive après sa connexion.
+ * L'hôtel de ville et les bâtiments de production ouvrent le panneau du village ; les autres
+ * bâtiments mènent à leur module. La mise en page du groupe (jeu) garantit qu'un joueur est
+ * connecté, et fournit son village.
  */
-export default async function VillagePage() {
-  const user = await currentUser(await headers())
-  return <VillageScreen userId={user?.id ?? ''} />
+export default function VillagePage() {
+  return (
+    <>
+      <WorldMap villagePanel={<VillageScreen />} />
+      <p className="map-hint">
+        Cliquez sur un bâtiment pour vous y rendre : l'hôtel de ville, la scierie, la carrière et la
+        mine gèrent votre village.
+      </p>
+    </>
+  )
 }

@@ -1,5 +1,7 @@
 'use client'
+import { motion } from 'motion/react'
 import { useState } from 'react'
+import { appear, ScreenTitle } from './screen'
 
 /** Phrase que le joueur doit saisir pour confirmer la suppression de son compte. */
 const CONFIRMATION = 'SUPPRIMER'
@@ -33,9 +35,9 @@ export function AccountScreen() {
 
   return (
     <>
-      <h1>Mes données</h1>
+      <ScreenTitle kind="account">Mes données</ScreenTitle>
 
-      <section className="panel" aria-label="Exporter mes données">
+      <motion.section className="panel" aria-label="Exporter mes données" {...appear}>
         <h2>Exporter mes données</h2>
         <p>
           Téléchargez, au format JSON, l'ensemble des données que le jeu conserve à votre sujet :
@@ -44,9 +46,14 @@ export function AccountScreen() {
         <a className="button" href={exportUrl} download>
           Télécharger mes données
         </a>
-      </section>
+      </motion.section>
 
-      <section className="panel" aria-label="Supprimer mon compte">
+      <motion.section
+        className="panel"
+        aria-label="Supprimer mon compte"
+        {...appear}
+        transition={{ ...appear.transition, delay: 0.08 }}
+      >
         <h2>Supprimer mon compte</h2>
         <p>
           Votre compte, vos messages et votre présence dans la Taverne sont supprimés. Votre nom et
@@ -66,11 +73,11 @@ export function AccountScreen() {
           </button>
         </div>
         {error && (
-          <p className="error" role="status">
+          <p className="toast error" role="status">
             {error}
           </p>
         )}
-      </section>
+      </motion.section>
     </>
   )
 }

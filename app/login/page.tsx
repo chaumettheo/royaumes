@@ -1,9 +1,10 @@
 'use client'
+import { motion } from 'motion/react'
 import { useRouter } from 'next/navigation'
 import { type FormEvent, useState } from 'react'
 import { HealthStatus } from '@/modules/system/ui'
 import { authClient } from '@/platform/auth/client'
-import { Entity } from '@/ui/entity'
+import { WorldMap } from '@/ui/world-map'
 
 /**
  * Messages affichés pour les erreurs renvoyées par Better Auth.
@@ -22,7 +23,9 @@ function messageFor(error: { code?: string; status: number }): string {
   return (error.code && ERRORS[error.code]) || 'La connexion a échoué.'
 }
 
-/** Page de connexion et de création de compte. */
+/**
+ * Écran titre : connexion et création de compte, devant la carte du village animée.
+ */
 export default function LoginPage() {
   const router = useRouter()
   const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn')
@@ -50,50 +53,72 @@ export default function LoginPage() {
   }
 
   return (
-    <>
-      <h1>
-        <Entity kind="village" /> Royaumes
-      </h1>
-      <p className="muted">{mode === 'signIn' ? 'Connexion' : 'Création de compte'}</p>
-      <div className="panel">
-        <form onSubmit={submit}>
-          {mode === 'signUp' && (
-            <input name="name" placeholder="Pseudo" required minLength={2} maxLength={30} />
-          )}
-          <input
-            name="email"
-            type="email"
-            placeholder="Adresse électronique"
-            required
-            autoComplete="email"
-          />
-          <input
-            name="password"
-            type="password"
-            placeholder="Mot de passe (8 caractères minimum)"
-            required
-            minLength={8}
-            autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'}
-          />
-          <button type="submit" disabled={pending}>
-            {mode === 'signIn' ? 'Se connecter' : 'Créer mon compte'}
-          </button>
-          {error && <p className="error">{error}</p>}
-        </form>
-        <p>
-          <button
-            className="link"
-            type="button"
-            onClick={() => {
-              setMode(mode === 'signIn' ? 'signUp' : 'signIn')
-              setError(null)
-            }}
-          >
-            {mode === 'signIn' ? 'Pas de compte ? En créer un' : 'Déjà un compte ? Se connecter'}
-          </button>
-        </p>
+    <main className="title-screen">
+      <div className="backdrop">
+        <WorldMap interactive={false} cover />
       </div>
-      <HealthStatus />
-    </>
+
+      <motion.div
+        className="title-card"
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 120, damping: 14 }}
+      >
+        <motion.h1
+          className="logo"
+          animate={{ y: [0, -6, 0] }}
+          transition={{ duration: 3, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }}
+        >
+          Royaumes
+        </motion.h1>
+        <p className="subtitle">
+          {mode === 'signIn' ? 'Entrez dans le royaume' : 'Nouveau seigneur'}
+        </p>
+
+        <div className="panel">
+          <form onSubmit={submit}>
+            {mode === 'signUp' && (
+              <input name="name" placeholder="Pseudo" required minLength={2} maxLength={30} />
+            )}
+            <input
+              name="email"
+              type="email"
+              placeholder="Adresse électronique"
+              required
+              autoComplete="email"
+            />
+            <input
+              name="password"
+              type="password"
+              placeholder="Mot de passe (8 caractères minimum)"
+              required
+              minLength={8}
+              autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'}
+            />
+            <motion.button type="submit" disabled={pending} whileTap={{ scale: 0.95 }}>
+              {mode === 'signIn' ? 'Jouer' : 'Créer mon compte'}
+            </motion.button>
+            {error && (
+              <motion.p className="error" initial={{ x: -8 }} animate={{ x: [8, -6, 4, 0] }}>
+                {error}
+              </motion.p>
+            )}
+          </form>
+          <p style={{ marginTop: 10, textAlign: 'center' }}>
+            <button
+              className="link"
+              type="button"
+              onClick={() => {
+                setMode(mode === 'signIn' ? 'signUp' : 'signIn')
+                setError(null)
+              }}
+            >
+              {mode === 'signIn' ? 'Pas de compte ? En créer un' : 'Déjà un compte ? Se connecter'}
+            </button>
+          </p>
+          <HealthStatus />
+        </div>
+      </motion.div>
+    </main>
   )
 }

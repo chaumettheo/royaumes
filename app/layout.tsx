@@ -1,6 +1,14 @@
 import type { Metadata } from 'next'
+import localFont from 'next/font/local'
 import type { ReactNode } from 'react'
 import './globals.css'
+
+// Police en pixel art monogram, de datagoblin (CC0), exposée par la variable --font-pixel.
+const pixel = localFont({
+  src: '../public/assets/fonts/monogram-extended.ttf',
+  variable: '--font-pixel',
+  display: 'swap',
+})
 
 // Métadonnées par défaut de toutes les pages : titre de l'onglet et description.
 export const metadata: Metadata = {
@@ -17,10 +25,8 @@ export const metadata: Metadata = {
  */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="fr">
-      <body>
-        <main>{children}</main>
-      </body>
+    <html lang="fr" className={pixel.variable}>
+      <body>{children}</body>
     </html>
   )
 }
