@@ -1,10 +1,14 @@
 'use client'
 import { hc } from 'hono/client'
+import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { RESOURCES, type Resource } from '@/modules/realm/contracts'
 import { useChannel } from '@/platform/realtime/use-channel'
 import { Entity } from '@/ui/entity'
-import { look } from '@/ui/theme'
+import { appear, ScreenTitle } from '@/ui/screen'
+import { Select } from '@/ui/select'
+import { Actor } from '@/ui/sprite'
+import { faceOf, look } from '@/ui/theme'
 import { useCountdown } from '@/ui/use-countdown'
 import type { CaravanApi } from './api'
 import {
@@ -21,13 +25,6 @@ import {
 
 /** Client HTTP typé, déduit de la sous-application Hono du module. */
 const client = hc<CaravanApi>('/api/caravan')
-
-/** Libellé affiché pour chaque état de la connexion temps réel. */
-const STATUS_LABELS = {
-  connecting: 'Connexion...',
-  open: 'Temps réel connecté',
-  reconnecting: 'Reconnexion...',
-} as const
 
 /** Libellé de chaque état d'une caravane. */
 const CARAVAN_STATUS: Record<CaravanStatus, string> = {
@@ -103,9 +100,20 @@ function CaravanRow({
   const recallable =
     caravan.recallableUntil !== null && remaining !== null && Date.now() < caravan.recallableUntil
 
+  // Avancement du trajet, de 0 à 1 : l'âne avance sur la piste à mesure que le temps passe.
+  const total = caravan.arrivesAt !== null ? caravan.arrivesAt - caravan.sentAt : 0
+  const progress =
+    travelling && remaining !== null && total > 0 ? Math.min(1, 1 - (remaining * 1000) / total) : 1
+
   return (
-    <li>
-      <span>
+    <motion.li
+      className="card"
+      data-mine={direction === 'sent' ? 'true' : undefined}
+      layout
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
+      <span className="card-main">
         <AmountsText amounts={caravan.cargo} />{' '}
         {direction === 'sent' ? `vers ${caravan.counterpart}` : `de ${caravan.counterpart}`}{' '}
         <span className="muted">
@@ -113,18 +121,32 @@ function CaravanRow({
           {travelling && remaining !== null && `, arrivée dans ${remaining} s`})
         </span>
         {caravan.status === 'attacked' && caravan.stolen && (
-          <span className="muted">
-            {' '}
+          <motion.span className="error" initial={{ scale: 0.6 }} animate={{ scale: [1.2, 1] }}>
             <Entity kind="brigands" /> volé : <AmountsText amounts={caravan.stolen} />
-          </span>
+          </motion.span>
         )}
       </span>
-      {direction === 'sent' && recallable && (
-        <button type="button" onClick={() => onRecall(caravan.caravanId)}>
-          Rappeler
-        </button>
+      {travelling && (
+        <span className="route" aria-hidden="true">
+          <motion.span
+            className="walker"
+            animate={{ left: `calc(${progress * 100}% - ${progress * 32}px)` }}
+            transition={{ duration: 1, ease: 'linear' }}
+          >
+            <Actor name="villager" direction="right" scale={1.4} />
+          </motion.span>
+        </span>
       )}
-    </li>
+      {direction === 'sent' && recallable && (
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.93 }}
+          onClick={() => onRecall(caravan.caravanId)}
+        >
+          Rappeler
+        </motion.button>
+      )}
+    </motion.li>
   )
 }
 
@@ -192,61 +214,75 @@ export function CaravanScreen() {
 
   return (
     <>
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h1>
-          <Entity kind="caravan" /> Caravanes
-        </h1>
-        <span className="status" data-status={status}>
-          {STATUS_LABELS[status]}
-        </span>
-      </div>
+      <ScreenTitle kind="caravan" status={status}>
+        Relais des caravanes
+      </ScreenTitle>
 
-      <div className="panel row">
-        <select
-          aria-label="Destinataire"
-          value={recipientId}
-          onChange={(e) => setRecipientId(e.target.value)}
-        >
-          <option value="">Choisir un village</option>
-          {recipients.map((recipient) => (
-            <option key={recipient.playerId} value={recipient.playerId}>
-              {recipient.villageName}
-            </option>
+      <motion.div className="panel" {...appear}>
+        <h2>Affréter une caravane</h2>
+        <div className="trade">
+          <Select
+            label="Destinataire"
+            placeholder="Choisir un village"
+            value={recipientId}
+            onChange={setRecipientId}
+            options={recipients.map((recipient) => ({
+              value: recipient.playerId,
+              label: recipient.villageName,
+              icon: (
+                // biome-ignore lint/performance/noImgElement: images en pixel art, sans optimisation
+                <img
+                  className="pixel select-face"
+                  src={faceOf(recipient.playerId)}
+                  alt=""
+                  aria-hidden="true"
+                />
+              ),
+            }))}
+          />
+          {RESOURCES.map((resource) => (
+            <span key={resource} className="picker">
+              <label htmlFor={`cargo-${resource}`}>
+                <Entity kind={resource} />
+              </label>
+              <input
+                id={`cargo-${resource}`}
+                className="amount"
+                type="number"
+                min={0}
+                value={cargo[resource]}
+                onChange={(e) => setCargo({ ...cargo, [resource]: Number(e.target.value) })}
+              />
+            </span>
           ))}
-        </select>
-        {RESOURCES.map((resource) => (
-          <span key={resource}>
-            <label htmlFor={`cargo-${resource}`}>
-              <Entity kind={resource} />
-            </label>
-            <input
-              id={`cargo-${resource}`}
-              className="amount"
-              type="number"
-              min={0}
-              value={cargo[resource]}
-              onChange={(e) => setCargo({ ...cargo, [resource]: Number(e.target.value) })}
-            />
-          </span>
-        ))}
-        <button type="button" onClick={send}>
-          Envoyer la caravane
-        </button>
-      </div>
-      <p className="muted">
-        Au plus {MAX_CARGO} unités. Les brigands guettent : plus la cargaison a de valeur, plus le
-        risque d'attaque est grand.
-      </p>
-      {message && (
-        <p className={message.error ? 'error' : 'muted'} role="status">
-          {message.text}
+          <motion.button type="button" onClick={send} whileTap={{ scale: 0.93 }}>
+            Envoyer la caravane
+          </motion.button>
+        </div>
+        <p className="muted" style={{ marginTop: 8 }}>
+          <Entity kind="brigands" /> Au plus {MAX_CARGO} unités. Les brigands guettent : plus la
+          cargaison a de valeur, plus le risque d'attaque est grand.
         </p>
-      )}
+        <AnimatePresence>
+          {message && (
+            <motion.p
+              key={message.text}
+              className={message.error ? 'toast error' : 'toast'}
+              role="status"
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+            >
+              {message.text}
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </motion.div>
 
       <section className="panel" aria-label="Vos caravanes">
         <h2>Vos caravanes</h2>
         {list?.sent.length === 0 && <p className="muted">Aucune caravane envoyée.</p>}
-        <ul className="offers">
+        <ul className="cards">
           {list?.sent.map((caravan) => (
             <CaravanRow
               key={caravan.caravanId}
@@ -262,7 +298,7 @@ export function CaravanScreen() {
       <section className="panel" aria-label="Caravanes reçues">
         <h2>Caravanes reçues</h2>
         {list?.received.length === 0 && <p className="muted">Aucune caravane reçue.</p>}
-        <ul className="offers">
+        <ul className="cards">
           {list?.received.map((caravan) => (
             <CaravanRow
               key={caravan.caravanId}

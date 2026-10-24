@@ -1,11 +1,16 @@
 'use client'
 import { hc } from 'hono/client'
+import { AnimatePresence, motion } from 'motion/react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useChannel } from '@/platform/realtime/use-channel'
 import { Entity } from '@/ui/entity'
+import { appear, ScreenTitle } from '@/ui/screen'
+import { Actor, Sprite } from '@/ui/sprite'
+import { faceOf } from '@/ui/theme'
 import { useCountdown } from '@/ui/use-countdown'
+import { ZoneFade } from '@/ui/zone-fade'
 import type { DungeonApi } from './api'
 import {
   type Action,
@@ -47,13 +52,6 @@ const ERRORS: Record<ApiError['code'], string> = {
 /** Libellé de chaque niveau de difficulté. */
 const DIFFICULTY_LABELS: Record<Difficulty, string> = { easy: 'Facile', hard: 'Difficile' }
 
-/** Libellé affiché pour chaque état de la connexion temps réel. */
-const STATUS_LABELS = {
-  connecting: 'Connexion...',
-  open: 'Temps réel connecté',
-  reconnecting: 'Reconnexion...',
-} as const
-
 // ---------------------------------------------------------------------------
 // Liste des expéditions ouvertes
 // ---------------------------------------------------------------------------
@@ -80,46 +78,93 @@ export function DungeonLobby() {
 
   return (
     <>
-      <h1>
-        <Entity kind="dungeon" /> Donjon
-      </h1>
-      <div className="panel row">
-        <label htmlFor="difficulty">Niveau</label>
-        <select
-          id="difficulty"
-          value={difficulty}
-          onChange={(e) => setDifficulty(e.target.value as Difficulty)}
-        >
-          {DIFFICULTIES.map((level) => (
-            <option key={level} value={level}>
-              {DIFFICULTY_LABELS[level]}
-            </option>
-          ))}
-        </select>
-        <button type="button" onClick={open}>
-          Ouvrir une nouvelle expédition
-        </button>
-      </div>
+      <ScreenTitle kind="dungeon">Donjon</ScreenTitle>
+
+      <motion.div className="panel dark" {...appear}>
+        <div className="forge-fire">
+          <span style={{ position: 'relative', display: 'inline-block' }}>
+            {/* biome-ignore lint/performance/noImgElement: images en pixel art, sans optimisation */}
+            <img
+              className="pixel"
+              src="/assets/map/arch.png"
+              alt=""
+              aria-hidden="true"
+              style={{ height: 120 }}
+            />
+            <motion.span
+              style={{ position: 'absolute', left: 36, top: 30 }}
+              animate={{ y: [0, -6, 0] }}
+              transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
+            >
+              <Actor name="skull" monster scale={3} />
+            </motion.span>
+          </span>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <h2>L'entrée du donjon</h2>
+            <p className="muted">Six salles, des monstres et un trésor. Jusqu'à quatre héros.</p>
+            <div className="row">
+              <fieldset className="difficulty">
+                <legend className="sr-only">Niveau</legend>
+                {DIFFICULTIES.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    aria-pressed={difficulty === level}
+                    onClick={() => setDifficulty(level)}
+                  >
+                    {DIFFICULTY_LABELS[level]}
+                  </button>
+                ))}
+              </fieldset>
+              <motion.button type="button" onClick={open} whileTap={{ scale: 0.93 }}>
+                Ouvrir une expédition
+              </motion.button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
       <section className="panel" aria-label="Expéditions ouvertes">
-        <div className="row" style={{ justifyContent: 'space-between' }}>
+        <div className="row spread">
           <h2>Expéditions ouvertes</h2>
           <button className="link" type="button" onClick={refresh}>
             Actualiser
           </button>
         </div>
         {games?.length === 0 && <p className="muted">Aucune expédition ouverte pour le moment.</p>}
-        <ul className="games">
-          {games?.map((game) => (
-            <li key={game.gameId}>
-              <span>
-                Expédition de {game.hostName}{' '}
-                <span className="muted">
-                  ({game.heroCount}/{MAX_HEROES} héros)
+        <ul className="cards">
+          <AnimatePresence initial={false}>
+            {games?.map((game) => (
+              <motion.li
+                key={game.gameId}
+                className="card"
+                layout
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0 }}
+              >
+                <span className="card-main">
+                  <span className="portrait small">
+                    {/* biome-ignore lint/performance/noImgElement: images en pixel art, sans optimisation */}
+                    <img className="pixel" src={faceOf(game.hostName)} alt="" aria-hidden="true" />
+                  </span>
+                  <span>
+                    Expédition de {game.hostName}
+                    <br />
+                    <span className="muted">
+                      {Array.from({ length: MAX_HEROES }, (_, index) =>
+                        index < game.heroCount ? '●' : '○',
+                      ).join(' ')}{' '}
+                      ({game.heroCount}/{MAX_HEROES} héros)
+                    </span>
+                  </span>
                 </span>
-              </span>
-              <Link href={`/dungeon/${game.gameId}`}>Voir</Link>
-            </li>
-          ))}
+                <Link className="button" href={`/dungeon/${game.gameId}`}>
+                  Voir
+                </Link>
+              </motion.li>
+            ))}
+          </AnimatePresence>
         </ul>
       </section>
     </>
@@ -152,6 +197,99 @@ function describeEffect(effect: Effect, nameOf: (id: string) => string) {
   return effect.kind === 'damage'
     ? `${nameOf(effect.source)} inflige ${effect.amount} dégâts à ${nameOf(effect.target)}`
     : `${nameOf(effect.source)} rend ${effect.amount} points de vie à ${nameOf(effect.target)}`
+}
+
+// ---------------------------------------------------------------------------
+// Relecture d'une manche, coup par coup
+// ---------------------------------------------------------------------------
+
+/** Durée d'affichage de chaque coup, en millisecondes : assez court pour rester vif. */
+const STEP_MS = 750
+
+/** Manche en cours de relecture : ses effets, les points de vie d'avant la manche, le coup affiché. */
+interface Playback {
+  effects: Effect[]
+  start: Record<string, number>
+  step: number
+}
+
+/**
+ * Relit, effet après effet, une manche résolue pendant que le joueur regarde l'expédition.
+ * Les points de vie d'avant la manche sont ceux de la vue précédente ; une manche déjà résolue
+ * à l'ouverture de la page n'est pas rejouée.
+ */
+function useRoundPlayback(view: GameView | null | undefined): Playback | null {
+  const previous = useRef<GameView | null>(null)
+  const [playback, setPlayback] = useState<Playback | null>(null)
+
+  useEffect(() => {
+    if (!view) return
+    const before = previous.current
+    previous.current = view
+    const round = view.lastRound
+    const resolvedNow =
+      before?.phase === 'combat' && round?.round === before.round && before.room === view.room
+    if (!before || !round || !resolvedNow || round.effects.length === 0) return
+    const start: Record<string, number> = {}
+    for (const fighter of [...before.heroes, ...before.monsters]) start[fighter.id] = fighter.hp
+    setPlayback({ effects: round.effects, start, step: 0 })
+  }, [view])
+
+  useEffect(() => {
+    if (!playback) return
+    const timer = setTimeout(
+      () =>
+        setPlayback((current) =>
+          current && current.step + 1 < current.effects.length
+            ? { ...current, step: current.step + 1 }
+            : null,
+        ),
+      STEP_MS,
+    )
+    return () => clearTimeout(timer)
+  }, [playback])
+
+  return playback
+}
+
+/**
+ * Compte les entrées dans une salle, vues par le joueur : le lancement de l'expédition, puis
+ * chaque porte ouverte. Une salle déjà atteinte à l'ouverture de la page ne compte pas.
+ */
+function useRoomEntries(view: GameView | null | undefined): number {
+  const previous = useRef<GameView | null>(null)
+  const [entries, setEntries] = useState(0)
+  useEffect(() => {
+    if (!view) return
+    const before = previous.current
+    previous.current = view
+    if (!before || view.phase === 'lobby') return
+    if (before.room !== view.room || before.phase === 'lobby') setEntries((count) => count + 1)
+  }, [view])
+  return entries
+}
+
+/** Nom de la salle atteinte ; avant la première porte, les héros sont à l'entrée du donjon. */
+const roomTitle = (view: GameView) =>
+  view.room < 0 ? 'Entrée du donjon' : `Salle ${view.room + 1} sur ${view.roomCount}`
+
+/** Contenu d'une salle, annoncé à l'entrée. */
+function roomSubtitle(view: GameView) {
+  if (view.phase === 'combat') return 'Des monstres surgissent !'
+  if (view.currentRoom?.kind === 'treasure') return `Un trésor de ${view.currentRoom.gold} or`
+  if (view.currentRoom?.kind === 'empty') return 'Une salle vide'
+  return undefined
+}
+
+/** Points de vie d'un combattant au coup affiché : les effets sont appliqués comme par le domaine. */
+function hpDuring(playback: Playback, id: string, hp: number, maxHp: number) {
+  let current = playback.start[id] ?? hp
+  for (const effect of playback.effects.slice(0, playback.step + 1)) {
+    if (effect.target !== id) continue
+    const change = effect.kind === 'damage' ? -effect.amount : effect.amount
+    current = Math.max(0, Math.min(maxHp, current + change))
+  }
+  return current
 }
 
 /** Écran d'une expédition : salon, exploration, combat et fin de l'expédition. */
@@ -208,6 +346,12 @@ export function DungeonGame({ gameId, userId }: { gameId: string; userId: string
     const res = await client.games[':id'].deadline.$post({ param: { id: gameId } })
     if (res.ok) setView((await res.json()).view)
   }, [gameId])
+  // RELECTURE : une manche qui vient d'être résolue est rejouée coup par coup.
+  const playback = useRoundPlayback(view)
+
+  // ENTRÉE EN SALLE : un fondu marque l'entrée dans le donjon, puis dans chaque nouvelle salle.
+  const entered = useRoomEntries(view)
+
   const remaining = useCountdown(
     view?.isMember && (view.phase === 'combat' || view.phase === 'exploring')
       ? view.deadline
@@ -216,17 +360,9 @@ export function DungeonGame({ gameId, userId }: { gameId: string; userId: string
   )
 
   const title = (
-    <div className="row" style={{ justifyContent: 'space-between' }}>
-      <h1>
-        <Entity kind="dungeon" /> Expédition
-        {view && <span className="muted"> - {DIFFICULTY_LABELS[view.difficulty]}</span>}
-      </h1>
-      {view?.isMember && (
-        <span className="status" data-status={status}>
-          {STATUS_LABELS[status]}
-        </span>
-      )}
-    </div>
+    <ScreenTitle kind="dungeon" back="/dungeon" status={view?.isMember ? status : undefined}>
+      Expédition{view && ` · ${DIFFICULTY_LABELS[view.difficulty]}`}
+    </ScreenTitle>
   )
 
   if (view === undefined) return title
@@ -234,8 +370,12 @@ export function DungeonGame({ gameId, userId }: { gameId: string; userId: string
     return (
       <>
         {title}
-        <p className="error">{ERRORS.GAME_NOT_FOUND}</p>
-        <Link href="/dungeon">Retour au Donjon</Link>
+        <div className="panel">
+          <p className="error">{ERRORS.GAME_NOT_FOUND}</p>
+          <Link className="button" href="/dungeon">
+            Retour au Donjon
+          </Link>
+        </div>
       </>
     )
   }
@@ -250,152 +390,229 @@ export function DungeonGame({ gameId, userId }: { gameId: string; userId: string
   const me = view.heroes.find((hero) => hero.id === userId)
   const standingMonsters = view.monsters.filter((monster) => monster.hp > 0)
   const standingHeroes = view.heroes.filter((hero) => hero.hp > 0)
+  const fighting = view.phase === 'combat'
+  // Coup affiché pendant la relecture : son auteur, sa cible et son effet.
+  const shown = playback ? playback.effects[playback.step] : null
+  const heroIds = new Set(view.heroes.map((hero) => hero.id))
+  /** Points de vie affichés : ceux du coup en cours de relecture, sinon les points actuels. */
+  const hpOf = (fighter: { id: string; hp: number; maxHp: number }) =>
+    playback ? hpDuring(playback, fighter.id, fighter.hp, fighter.maxHp) : fighter.hp
+  /** Effet visuel reçu par un combattant au coup affiché. */
+  const hitOf = (id: string): Hit | null =>
+    shown?.target === id
+      ? {
+          kind: shown.kind,
+          amount: shown.amount,
+          fx: shown.kind === 'heal' ? 'heal' : heroIds.has(shown.source) ? 'slash' : 'claw',
+        }
+      : null
 
   return (
     <>
       {title}
 
-      {/* Héros de l'expédition. */}
-      <section className="panel heroes" aria-label="Héros">
-        {view.heroes.map((hero) => (
-          <div key={hero.id} className="fighter" data-down={hero.hp <= 0}>
+      <motion.section className="panel" aria-label="Expédition" {...appear}>
+        <div className="row spread">
+          <h2 style={{ margin: 0 }}>
+            {view.phase === 'lobby' && 'Rassemblement des héros'}
+            {view.phase === 'exploring' && roomTitle(view)}
+            {fighting && `Combat - salle ${view.room + 1}, manche ${view.round}`}
+            {view.phase === 'won' && 'Victoire !'}
+            {view.phase === 'lost' && 'Défaite...'}
+          </h2>
+          <span className="row">
             <span>
-              <Entity kind={hero.companion ? 'companion' : 'hero'} /> {hero.name}
-              {hero.id === view.hostId && <span className="muted"> (hôte)</span>}
-              {hero.companion && <span className="muted"> (piloté par l'ordinateur)</span>}
+              <Entity kind="gold" /> {view.loot}
             </span>
-            <span className="muted">
-              {hero.hp}/{hero.maxHp} PV
-            </span>
-            {view.phase === 'combat' && hero.ready && <span className="ok">prêt</span>}
-            {view.turnHeroId === hero.id && <span className="ok">à son tour</span>}
-          </div>
-        ))}
-      </section>
+            {remaining !== null && (
+              <motion.span
+                key={remaining <= 5 ? remaining : 'calme'}
+                className="countdown"
+                initial={{ scale: remaining <= 5 ? 1.4 : 1 }}
+                animate={{ scale: 1 }}
+                title={view.phase === 'exploring' ? "La porte s'ouvrira d'elle-même" : undefined}
+              >
+                {remaining}
+              </motion.span>
+            )}
+          </span>
+        </div>
 
-      {/* Salon : rejoindre ou lancer l'expédition. */}
-      {view.phase === 'lobby' && (
-        <div className="panel">
-          <p className="muted">
-            Communiquez l'adresse de cette page aux joueurs que vous souhaitez inviter.
-          </p>
-          {!view.isMember && view.heroes.length < MAX_HEROES && (
-            <button type="button" onClick={join}>
-              Rejoindre l'expédition
-            </button>
+        <div className="combat-call" aria-live="polite">
+          <AnimatePresence mode="wait">
+            {shown && (
+              <motion.span
+                key={playback?.step}
+                initial={{ opacity: 0, y: -8, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 6 }}
+                transition={{ duration: 0.18 }}
+              >
+                {describeEffect(shown, nameOf)}
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <div className="arena battle">
+          {entered > 0 && (
+            <ZoneFade
+              key={entered}
+              scope="area"
+              title={roomTitle(view)}
+              subtitle={roomSubtitle(view)}
+            />
           )}
-          {view.isHost && view.heroes.length < MAX_HEROES && (
-            <button type="button" onClick={addCompanion}>
-              <Entity kind="companion" /> Ajouter un compagnon
-            </button>
-          )}
-          {view.isHost && (
-            <button type="button" onClick={start}>
-              Entrer dans le donjon
-            </button>
-          )}
-          {view.isMember && !view.isHost && (
-            <p className="muted">En attente du lancement par l'hôte.</p>
+          {/* Héros de l'expédition. */}
+          <section className="heroes" aria-label="Héros" style={{ display: 'grid', gap: 8 }}>
+            {view.heroes.map((hero) => (
+              <Fighter
+                key={hero.id}
+                name={hero.name}
+                sprite={hero.companion ? 'companion' : heroSprite(hero.id)}
+                hp={hpOf(hero)}
+                maxHp={hero.maxHp}
+                facing="right"
+                acting={shown?.source === hero.id}
+                hit={hitOf(hero.id)}
+                step={playback?.step ?? -1}
+                tags={[
+                  hero.id === view.hostId ? 'hôte' : null,
+                  hero.companion ? 'compagnon' : null,
+                  fighting && hero.ready ? 'prêt' : null,
+                ]}
+                turn={view.turnHeroId === hero.id}
+              />
+            ))}
+          </section>
+
+          {/* Monstres de la salle. */}
+          {view.monsters.length > 0 && (
+            <section className="monsters" aria-label="Monstres" style={{ display: 'grid', gap: 8 }}>
+              {view.monsters.map((monster) => (
+                <Fighter
+                  key={monster.id}
+                  name={monsterName(monster, view.monsters)}
+                  sprite={MONSTER_SPRITES[monster.kind].name}
+                  monster={MONSTER_SPRITES[monster.kind].monster}
+                  hp={hpOf(monster)}
+                  maxHp={monster.maxHp}
+                  facing="left"
+                  acting={shown?.source === monster.id}
+                  hit={hitOf(monster.id)}
+                  step={playback?.step ?? -1}
+                />
+              ))}
+            </section>
           )}
         </div>
-      )}
 
-      {/* Exploration : ouvrir la porte suivante, à tour de rôle. */}
-      {view.phase === 'exploring' && (
-        <div className="panel">
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <h2>Exploration</h2>
-            {remaining !== null && (
-              <span className="countdown" title="La porte s'ouvrira d'elle-même">
-                {remaining} s
-              </span>
+        {/* Salon : rejoindre ou lancer l'expédition. */}
+        {view.phase === 'lobby' && (
+          <div style={{ marginTop: 12 }}>
+            <p className="muted">
+              Communiquez l'adresse de cette page aux joueurs que vous souhaitez inviter.
+            </p>
+            <div className="actions">
+              {!view.isMember && view.heroes.length < MAX_HEROES && (
+                <motion.button type="button" whileTap={{ scale: 0.93 }} onClick={join}>
+                  Rejoindre l'expédition
+                </motion.button>
+              )}
+              {view.isHost && view.heroes.length < MAX_HEROES && (
+                <motion.button type="button" whileTap={{ scale: 0.93 }} onClick={addCompanion}>
+                  <Entity kind="companion" /> Ajouter un compagnon
+                </motion.button>
+              )}
+              {view.isHost && (
+                <motion.button type="button" whileTap={{ scale: 0.93 }} onClick={start}>
+                  Entrer dans le donjon
+                </motion.button>
+              )}
+            </div>
+            {view.isMember && !view.isHost && (
+              <p className="muted">En attente du lancement par l'hôte.</p>
             )}
           </div>
-          <p>
-            Salle {view.room + 1} sur {view.roomCount}
-            {view.currentRoom?.kind === 'treasure' && ` : un trésor de ${view.currentRoom.gold} or`}
-            {view.currentRoom?.kind === 'empty' && ' : une salle vide'}
-            {' - '}
-            <Entity kind="gold" /> {view.loot}
-          </p>
-          {view.turnHeroId === userId ? (
-            <button type="button" onClick={openDoor}>
-              <Entity kind="door" /> Ouvrir la porte suivante
-            </button>
-          ) : (
-            <p className="muted">Au tour de {nameOf(view.turnHeroId ?? '')}.</p>
-          )}
-        </div>
-      )}
+        )}
 
-      {/* Combat : monstres, compte à rebours et choix de l'action. */}
-      {view.phase === 'combat' && (
-        <div className="panel">
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <h2>
-              Combat - salle {view.room + 1}, manche {view.round}
-            </h2>
-            {remaining !== null && <span className="countdown">{remaining} s</span>}
+        {/* Exploration : ouvrir la porte suivante, à tour de rôle. */}
+        {!playback && view.phase === 'exploring' && (
+          <div style={{ marginTop: 12 }}>
+            <p>
+              {view.currentRoom?.kind === 'treasure' &&
+                `Un trésor de ${view.currentRoom.gold} or !`}
+              {view.currentRoom?.kind === 'empty' && 'Une salle vide.'}
+            </p>
+            {view.turnHeroId === userId ? (
+              <motion.button type="button" whileTap={{ scale: 0.93 }} onClick={openDoor}>
+                <Entity kind="door" /> Ouvrir la porte suivante
+              </motion.button>
+            ) : (
+              <p className="muted">Au tour de {nameOf(view.turnHeroId ?? '')}.</p>
+            )}
           </div>
-          <div className="monsters">
-            {view.monsters.map((monster) => (
-              <div key={monster.id} className="fighter" data-down={monster.hp <= 0}>
-                <span>
-                  <Entity kind={monster.kind} /> {monsterName(monster, view.monsters)}
-                </span>
-                <span className="muted">
-                  {monster.hp}/{monster.maxHp} PV
-                </span>
-              </div>
+        )}
+
+        {/* Combat : choix de l'action. */}
+        {!playback && fighting && me && me.hp > 0 && !me.action && (
+          <div className="actions">
+            {standingMonsters.map((monster) => (
+              <motion.button
+                key={monster.id}
+                type="button"
+                whileTap={{ scale: 0.93 }}
+                onClick={() => act({ type: 'attack', target: monster.id })}
+              >
+                Attaquer {monsterName(monster, view.monsters)}
+              </motion.button>
+            ))}
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.93 }}
+              onClick={() => act({ type: 'defend' })}
+            >
+              Se défendre
+            </motion.button>
+            {standingHeroes.map((hero) => (
+              <motion.button
+                key={hero.id}
+                type="button"
+                whileTap={{ scale: 0.93 }}
+                onClick={() => act({ type: 'heal', target: hero.id })}
+              >
+                Soigner {hero.name}
+              </motion.button>
             ))}
           </div>
-          {me && me.hp > 0 && !me.action && (
-            <div className="actions">
-              {standingMonsters.map((monster) => (
-                <button
-                  key={monster.id}
-                  type="button"
-                  onClick={() => act({ type: 'attack', target: monster.id })}
-                >
-                  Attaquer {monsterName(monster, view.monsters)}
-                </button>
-              ))}
-              <button type="button" onClick={() => act({ type: 'defend' })}>
-                Se défendre
-              </button>
-              {standingHeroes.map((hero) => (
-                <button
-                  key={hero.id}
-                  type="button"
-                  onClick={() => act({ type: 'heal', target: hero.id })}
-                >
-                  Soigner {hero.name}
-                </button>
-              ))}
-            </div>
-          )}
-          {me?.action && (
-            <p className="muted">
-              Votre choix : {describeAction(me.action, nameOf)}. En attente des autres héros.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Fin de l'expédition. */}
-      {(view.phase === 'won' || view.phase === 'lost') && (
-        <div className="panel">
-          <h2>{view.phase === 'won' ? 'Victoire !' : 'Défaite...'}</h2>
-          <p>
-            Butin de l'expédition : <Entity kind="gold" /> {view.loot}
+        )}
+        {!playback && fighting && me?.action && (
+          <p className="muted" style={{ marginTop: 10 }}>
+            Votre choix : {describeAction(me.action, nameOf)}. En attente des autres héros.
           </p>
-          <Link href="/dungeon">Retour au Donjon</Link>
-        </div>
-      )}
+        )}
+
+        {/* Fin de l'expédition. */}
+        {!playback && (view.phase === 'won' || view.phase === 'lost') && (
+          <motion.div
+            style={{ marginTop: 12 }}
+            initial={{ scale: 0.6, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 200, damping: 12 }}
+          >
+            <p>
+              Butin de l'expédition : <Entity kind="gold" /> {view.loot}
+            </p>
+            <Link className="button" href="/dungeon">
+              Retour au Donjon
+            </Link>
+          </motion.div>
+        )}
+      </motion.section>
 
       {/* Résultat de la dernière manche, connu de tous une fois la manche résolue. */}
       {view.lastRound && (
-        <section className="panel" aria-label="Dernière manche">
+        <section className="panel dark" aria-label="Dernière manche">
           <h2>Manche {view.lastRound.round}</h2>
           <ul className="log">
             {Object.entries(view.lastRound.actions).map(([heroId, action]) => (
@@ -413,7 +630,148 @@ export function DungeonGame({ gameId, userId }: { gameId: string; userId: string
         </section>
       )}
 
-      {error && <p className="error">{error}</p>}
+      {error && <p className="toast error">{error}</p>}
     </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Combattants
+// ---------------------------------------------------------------------------
+
+/** Planche de chaque type de monstre ; le squelette est un personnage, pas un monstre. */
+const MONSTER_SPRITES: Record<Monster['kind'], { name: string; monster: boolean }> = {
+  goblin: { name: 'goblin', monster: true },
+  skeleton: { name: 'skeleton', monster: false },
+  troll: { name: 'troll', monster: true },
+}
+
+/** Apparence d'un héros joueur, choisie de façon stable à partir de son identifiant. */
+const HERO_SPRITES = ['hero', 'knight', 'hunter', 'monk', 'master']
+function heroSprite(id: string) {
+  let hash = 0
+  for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  return HERO_SPRITES[hash % HERO_SPRITES.length]
+}
+
+/** Effet visuel reçu par un combattant : entaille d'un héros, griffure d'un monstre, ou soin. */
+interface Hit {
+  kind: Effect['kind']
+  amount: number
+  fx: 'slash' | 'claw' | 'heal'
+}
+
+/** Planches des effets visuels, en images de 32 pixels. */
+const FX: Record<Hit['fx'], { src: string; frames: number }> = {
+  slash: { src: '/assets/fx/slash.png', frames: 4 },
+  claw: { src: '/assets/fx/claw.png', frames: 4 },
+  heal: { src: '/assets/fx/heal.png', frames: 6 },
+}
+
+/**
+ * Un combattant : personnage animé, nom, points de vie. Pendant la relecture d'une manche,
+ * l'auteur du coup bondit vers sa cible ; la cible reçoit l'effet, tremble, et affiche les
+ * points perdus ou rendus, tandis que sa barre se vide ou se remplit.
+ */
+function Fighter({
+  name,
+  sprite,
+  monster = false,
+  hp,
+  maxHp,
+  facing,
+  tags = [],
+  turn = false,
+  acting = false,
+  hit = null,
+  step = -1,
+}: {
+  name: string
+  sprite: string
+  monster?: boolean
+  hp: number
+  maxHp: number
+  facing: 'left' | 'right'
+  tags?: (string | null)[]
+  turn?: boolean
+  acting?: boolean
+  hit?: Hit | null
+  step?: number
+}) {
+  const down = hp <= 0
+  const lunge = facing === 'right' ? 22 : -22
+  return (
+    <div className="fighter" data-down={down} data-acting={acting || undefined}>
+      <span className="stage-sprite">
+        <motion.span
+          key={acting ? `act-${step}` : 'idle'}
+          style={{ display: 'inline-block' }}
+          animate={acting ? { x: [0, lunge, 0], scale: [1, 1.2, 1] } : { x: 0, scale: 1 }}
+          transition={{ duration: 0.42, ease: 'easeOut' }}
+        >
+          <Actor
+            name={sprite}
+            monster={monster}
+            direction={facing}
+            walking={!down}
+            fps={5}
+            scale={3}
+          />
+        </motion.span>
+        {hit && (
+          <span key={`fx-${step}`} className="fx">
+            <Sprite
+              src={FX[hit.fx].src}
+              w={32}
+              h={32}
+              sheet={[FX[hit.fx].frames * 32, 32]}
+              frames={FX[hit.fx].frames}
+              fps={FX[hit.fx].frames * 1.6}
+              scale={2}
+            />
+          </span>
+        )}
+      </span>
+      <motion.span
+        key={hit?.kind === 'damage' ? `hit-${step}` : 'calm'}
+        className="info"
+        animate={hit?.kind === 'damage' ? { x: [0, -7, 7, -4, 0] } : { x: 0 }}
+        transition={{ duration: 0.35, delay: 0.15 }}
+      >
+        <span className="row" style={{ gap: 6 }}>
+          <strong>{name}</strong>
+          {tags.filter(Boolean).map((tag) => (
+            <span key={tag} className="tag">
+              {tag}
+            </span>
+          ))}
+          {turn && <span className="tag turn">à son tour</span>}
+        </span>
+        <span className="bar hp" data-low={hp / maxHp < 0.3} aria-hidden="true">
+          <motion.span
+            initial={false}
+            animate={{ width: `${(Math.max(0, hp) / maxHp) * 100}%` }}
+            transition={{ duration: 0.3, delay: 0.15 }}
+          />
+        </span>
+        <span className="muted">
+          {Math.max(0, hp)}/{maxHp} PV
+        </span>
+      </motion.span>
+      <AnimatePresence>
+        {hit && (
+          <motion.span
+            key={`n-${step}`}
+            className={`float ${hit.kind}`}
+            aria-hidden="true"
+            initial={{ y: 6, opacity: 0, scale: 0.6 }}
+            animate={{ y: -26, opacity: [0, 1, 1, 0], scale: [0.6, 1.3, 1, 1] }}
+            transition={{ duration: 0.75, ease: 'easeOut' }}
+          >
+            {hit.kind === 'damage' ? `-${hit.amount}` : `+${hit.amount}`}
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </div>
   )
 }

@@ -1,8 +1,10 @@
 'use client'
 import { hc } from 'hono/client'
+import { AnimatePresence, motion } from 'motion/react'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { useChannel } from '@/platform/realtime/use-channel'
-import { Entity } from '@/ui/entity'
+import { appear, ScreenTitle } from '@/ui/screen'
+import { faceOf } from '@/ui/theme'
 import type { TavernApi } from './api'
 import {
   HEARTBEAT_MS,
@@ -15,13 +17,6 @@ import {
 
 /** Client HTTP typé, déduit de la sous-application Hono du module. */
 const client = hc<TavernApi>('/api/tavern')
-
-/** Libellé affiché pour chaque état de la connexion temps réel. */
-const STATUS_LABELS = {
-  connecting: 'Connexion...',
-  open: 'Temps réel connecté',
-  reconnecting: 'Reconnexion...',
-} as const
 
 /** Message affiché au joueur pour chaque erreur. */
 function errorText(error: MessageError | { code: 'INVALID_INPUT' }): string {
@@ -121,25 +116,47 @@ export function TavernScreen({ userId }: { userId: string }) {
 
   return (
     <>
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h1>
-          <Entity kind="tavern" /> Taverne
-        </h1>
-        <span className="status" data-status={status}>
-          {STATUS_LABELS[status]}
-        </span>
-      </div>
+      <ScreenTitle kind="tavern" status={status}>
+        Taverne
+      </ScreenTitle>
 
       <div className="tavern">
-        <section className="panel" aria-label="Messages">
+        <motion.section className="panel" aria-label="Messages" {...appear}>
+          <h2>Au comptoir</h2>
           {messages.length === 0 && <p className="muted">Aucun message pour le moment.</p>}
           <ul className="messages">
-            {messages.map((message) => (
-              <li key={message.id} data-mine={message.authorId === userId || undefined}>
-                <span className="muted">{timeOf(message.postedAt)}</span>{' '}
-                <strong>{message.authorName}</strong> {message.body}
-              </li>
-            ))}
+            <AnimatePresence initial={false}>
+              {messages.map((message) => {
+                const mine = message.authorId === userId
+                return (
+                  <motion.li
+                    key={message.id}
+                    className="message"
+                    data-mine={mine || undefined}
+                    initial={{ opacity: 0, x: mine ? 24 : -24, scale: 0.95 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+                  >
+                    <span className="portrait small">
+                      {/* biome-ignore lint/performance/noImgElement: images en pixel art, sans optimisation */}
+                      <img
+                        className="pixel"
+                        src={faceOf(message.authorId)}
+                        alt=""
+                        aria-hidden="true"
+                      />
+                    </span>
+                    <span className="bubble">
+                      <small>
+                        {message.authorName} · {timeOf(message.postedAt)}
+                      </small>
+                      <br />
+                      {message.body}
+                    </span>
+                  </motion.li>
+                )
+              })}
+            </AnimatePresence>
           </ul>
           <form className="row" onSubmit={send}>
             <input
@@ -150,21 +167,41 @@ export function TavernScreen({ userId }: { userId: string }) {
               placeholder="Votre message"
               style={{ flex: 1 }}
             />
-            <button type="submit">Envoyer</button>
+            <motion.button type="submit" whileTap={{ scale: 0.93 }}>
+              Envoyer
+            </motion.button>
           </form>
           {error && (
-            <p className="error" role="alert">
+            <motion.p
+              className="toast error"
+              role="alert"
+              initial={{ x: -8 }}
+              animate={{ x: [8, -6, 4, 0] }}
+            >
               {error}
-            </p>
+            </motion.p>
           )}
-        </section>
+        </motion.section>
 
-        <section className="panel" aria-label="Joueurs présents">
+        <section className="panel dark" aria-label="Joueurs présents">
           <h2>Présents</h2>
           <ul className="presence">
-            {players.map((player) => (
-              <li key={player.id}>{player.name}</li>
-            ))}
+            <AnimatePresence initial={false}>
+              {players.map((player) => (
+                <motion.li
+                  key={player.id}
+                  initial={{ opacity: 0, x: 16 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 16 }}
+                >
+                  <span className="portrait small">
+                    {/* biome-ignore lint/performance/noImgElement: images en pixel art, sans optimisation */}
+                    <img className="pixel" src={faceOf(player.id)} alt="" aria-hidden="true" />
+                  </span>
+                  {player.name}
+                </motion.li>
+              ))}
+            </AnimatePresence>
           </ul>
         </section>
       </div>

@@ -1,8 +1,11 @@
 'use client'
 import { hc } from 'hono/client'
+import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useState } from 'react'
 import { useChannel } from '@/platform/realtime/use-channel'
 import { Entity } from '@/ui/entity'
+import { appear, ScreenTitle } from '@/ui/screen'
+import { Sprite } from '@/ui/sprite'
 import { look } from '@/ui/theme'
 import { useCountdown } from '@/ui/use-countdown'
 import type { ForgeApi } from './api'
@@ -17,13 +20,6 @@ import {
 
 /** Client HTTP typé, déduit de la sous-application Hono du module. */
 const client = hc<ForgeApi>('/api/forge')
-
-/** Libellé affiché pour chaque état de la connexion temps réel. */
-const STATUS_LABELS = {
-  connecting: 'Connexion...',
-  open: 'Temps réel connecté',
-  reconnecting: 'Reconnexion...',
-} as const
 
 /** Message affiché au joueur pour chaque erreur. */
 const ERRORS: Record<ForgeError['code'] | 'INVALID_INPUT', string> = {
@@ -109,81 +105,149 @@ export function ForgeScreen({ userId }: { userId: string }) {
       'Objet fondu : la moitié des ressources est rendue.',
     )
 
+  // Avancement de la fabrication en cours, de 0 à 1, d'après la durée de sa recette.
+  const forging = view?.forging
+  const duration = recipes.find((entry) => entry.recipe === forging?.recipe)?.durationMs ?? 0
+  const progress =
+    forging?.status === 'forging' && remaining !== null && duration > 0
+      ? Math.min(1, 1 - (remaining * 1000) / duration)
+      : 0
+
   return (
     <>
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h1>
-          <Entity kind="forge" /> Forge
-        </h1>
-        <span className="status" data-status={status}>
-          {STATUS_LABELS[status]}
-        </span>
-      </div>
+      <ScreenTitle kind="forge" status={status}>
+        Forge
+      </ScreenTitle>
 
-      {message && (
-        <p className={message.error ? 'error' : 'muted'} role="status">
-          {message.text}
-        </p>
-      )}
+      <AnimatePresence>
+        {message && (
+          <motion.p
+            key={message.text}
+            className={message.error ? 'toast error' : 'toast'}
+            role="status"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+          >
+            {message.text}
+          </motion.p>
+        )}
+      </AnimatePresence>
 
-      <section className="panel" aria-label="Fabrication en cours">
-        <h2>Fabrication en cours</h2>
-        {!view?.forging && <p className="muted">La forge est libre.</p>}
-        {view?.forging && (
-          <div className="row">
-            <span>
-              <Entity kind={view.forging.recipe} /> {look(view.forging.recipe).label}{' '}
-              <span className="muted">
-                {view.forging.status === 'loading'
-                  ? '(en attente des ressources)'
-                  : `(prête dans ${remaining ?? '?'} s)`}
+      <motion.section className="panel" aria-label="Fabrication en cours" {...appear}>
+        <h2>Le four</h2>
+        <div className="forge-fire">
+          <span style={{ position: 'relative', display: 'inline-block' }}>
+            {/* biome-ignore lint/performance/noImgElement: images en pixel art, sans optimisation */}
+            <img
+              className="pixel"
+              src="/assets/map/furnace.png"
+              alt=""
+              aria-hidden="true"
+              style={{ height: 128 }}
+            />
+            {forging && (
+              <span style={{ position: 'absolute', left: 16, top: -40 }}>
+                <Sprite
+                  src="/assets/map/smoke.png"
+                  w={32}
+                  h={32}
+                  sheet={[192, 32]}
+                  frames={6}
+                  fps={8}
+                  scale={2}
+                />
               </span>
-            </span>
-            {view.forging.status === 'forging' && (
-              <button type="button" onClick={cancel}>
-                Annuler
-              </button>
+            )}
+          </span>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            {!forging && <p className="muted">La forge est libre : choisissez une recette.</p>}
+            {forging && (
+              <>
+                <p>
+                  <Entity kind={forging.recipe} size="2em" /> {look(forging.recipe).label}{' '}
+                  <span className="muted">
+                    {forging.status === 'loading'
+                      ? '(en attente des ressources)'
+                      : `(prête dans ${remaining ?? '?'} s)`}
+                  </span>
+                </p>
+                <div className="bar" aria-hidden="true">
+                  <motion.span
+                    animate={{ width: `${progress * 100}%` }}
+                    transition={{ duration: 1, ease: 'linear' }}
+                  />
+                </div>
+                {forging.status === 'forging' && (
+                  <motion.button
+                    type="button"
+                    whileTap={{ scale: 0.93 }}
+                    onClick={cancel}
+                    style={{ marginTop: 10 }}
+                  >
+                    Annuler
+                  </motion.button>
+                )}
+              </>
             )}
           </div>
-        )}
-      </section>
+        </div>
+      </motion.section>
 
       <section className="panel" aria-label="Recettes">
         <h2>Recettes</h2>
-        <ul className="offers">
-          {recipes.map((entry) => (
-            <li key={entry.recipe}>
+        <div className="recipes">
+          {recipes.map((entry, index) => (
+            <motion.div
+              key={entry.recipe}
+              className="recipe"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05 }}
+              whileHover={{ y: -3 }}
+            >
+              <Entity kind={entry.recipe} size="48px" />
+              <strong>{look(entry.recipe).label}</strong>
               <span>
-                <Entity kind={entry.recipe} /> {look(entry.recipe).label} :{' '}
-                <AmountsText amounts={entry.cost} />{' '}
-                <span className="muted">({entry.durationMs / 1000} s)</span>
+                <AmountsText amounts={entry.cost} />
               </span>
-              <button
+              <span className="muted">{entry.durationMs / 1000} s</span>
+              <motion.button
                 type="button"
-                disabled={Boolean(view?.forging)}
+                whileTap={{ scale: 0.93 }}
+                disabled={Boolean(forging)}
                 onClick={() => craft(entry.recipe)}
               >
                 Forger
-              </button>
-            </li>
+              </motion.button>
+            </motion.div>
           ))}
-        </ul>
+        </div>
       </section>
 
-      <section className="panel" aria-label="Inventaire">
+      <section className="panel dark" aria-label="Inventaire">
         <h2>Inventaire</h2>
         {view?.inventory.length === 0 && <p className="muted">Aucun objet forgé.</p>}
-        <ul className="offers">
-          {view?.inventory.map((item) => (
-            <li key={item.itemId}>
-              <span>
-                <Entity kind={item.recipe} /> {look(item.recipe).label}
-              </span>
-              <button type="button" onClick={() => smelt(item.itemId)}>
-                Fondre
-              </button>
-            </li>
-          ))}
+        <ul className="inventory">
+          <AnimatePresence initial={false}>
+            {view?.inventory.map((item) => (
+              <motion.li
+                key={item.itemId}
+                className="slot"
+                layout
+                initial={{ opacity: 0, scale: 0.4, rotate: -20 }}
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                exit={{ opacity: 0, scale: 0.3, y: 20 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 18 }}
+              >
+                <Entity kind={item.recipe} size="36px" />
+                <span>{look(item.recipe).label}</span>
+                <button type="button" onClick={() => smelt(item.itemId)}>
+                  Fondre
+                </button>
+              </motion.li>
+            ))}
+          </AnimatePresence>
         </ul>
       </section>
     </>
