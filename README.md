@@ -62,6 +62,7 @@ src/
 scripts/              Scripts d'exploitation, de mesure et de démarrage du service extrait
 drizzle/              Migrations de la base de données
 perf/                 Budget de performance et résultats des tests de charge
+public/assets/        Ressources graphiques en pixel art (CC0)
 docs/
   adr/                Décisions d'architecture
   qualite/            Dette technique et revues
@@ -83,6 +84,22 @@ Un module n'est accessible depuis l'extérieur que par ses entrées publiques : 
 | `tavern` | Taverne : salon de discussion commun et présence des joueurs, sans Event Sourcing | `/api/tavern` |
 | `caravan` | Caravanes : envoi de ressources au village d'un autre joueur, exposées aux brigands en chemin, par une saga avec le Village | `/api/caravan` |
 | `forge` | Forge : fabrication d'objets à partir de recettes, en consommant des ressources du village, et fonte des objets | `/api/forge` |
+
+## Interface
+
+L'interface est celle d'un jeu de rôle 2D rétro, en pixel art. Le joueur arrive sur la carte du
+village (`/village`, `src/ui/world-map.tsx`) : chaque bâtiment mène à son module, et l'hôtel de
+ville, la scierie, la carrière et la mine ouvrent le panneau du village. Les ressources du
+village restent affichées en haut de chaque écran, et les lieux du royaume sont accessibles par
+une barre d'icônes, placée en bas de l'écran sur un téléphone.
+
+Les animations sont réalisées avec Motion (apparition des panneaux, fenêtres, listes, combats)
+et en CSS, image par image, pour les planches animées (`src/ui/sprite.tsx`). Les ressources
+graphiques, dans le domaine public (CC0), proviennent d'itch.io et sont rangées dans
+`public/assets`, servies à l'adresse `/assets` ; leurs auteurs et leurs licences sont indiqués
+dans [public/assets/README.md](public/assets/README.md). L'image de chaque entité du jeu est
+choisie dans la couche de thème, `src/ui/theme.ts` : changer de direction artistique ne demande
+de modifier que ce fichier et les ressources.
 
 ## Temps réel
 
